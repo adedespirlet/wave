@@ -1,0 +1,211 @@
+============================= test session starts ==============================
+platform linux -- Python 3.10.12, pytest-8.0.0, pluggy-1.6.0
+rootdir: /home/adespirl/git/iree-turbine
+configfile: setup.cfg
+plugins: xdist-3.5.0
+collected 1 item
+
+tests/kernel/wave/attention/layernorm2_test.py (256, 256)
+mma_mapping {}
+constraint [WorkgroupConstraint(dim=M, tile_size=1, workgroup_dim=1, apply_fn=None, primary=True, iters=None), WorkgroupConstraint(dim=N, tile_size=64*ceiling(N/64), workgroup_dim=0, apply_fn=None, primary=True, iters=None), WaveConstraint(dim=M, tile_size=1.0, wave_id=$T1, wg_constraint=WorkgroupConstraint(dim=M, tile_size=1, workgroup_dim=1, apply_fn=None, primary=True, iters=None)), WaveConstraint(dim=N, tile_size=64*ceiling(N/64), wave_id=floor($T0/64), wg_constraint=WorkgroupConstraint(dim=N, tile_size=64*ceiling(N/64), workgroup_dim=0, apply_fn=None, primary=True, iters=None))]
+custom read(memory=a, elements_per_thread=ceiling(N/64), mapping_dynamic_vals=()) type(Register[M, N].of(f16))
+custom_index_dims [M, N]
+index {M: 1.0*$T1 + $WG1 : 1 : 1, N: 64*$WG0*ceiling(N/64) + 64*ceiling(N/64)*floor($T0/64) : 1 : 1}
+constraint [WorkgroupConstraint(dim=M, tile_size=1, workgroup_dim=1, apply_fn=None, primary=True, iters=None), WorkgroupConstraint(dim=N, tile_size=64*ceiling(N/64), workgroup_dim=0, apply_fn=None, primary=True, iters=None), WaveConstraint(dim=M, tile_size=1.0, wave_id=$T1, wg_constraint=WorkgroupConstraint(dim=M, tile_size=1, workgroup_dim=1, apply_fn=None, primary=True, iters=None)), WaveConstraint(dim=N, tile_size=64*ceiling(N/64), wave_id=floor($T0/64), wg_constraint=WorkgroupConstraint(dim=N, tile_size=64*ceiling(N/64), workgroup_dim=0, apply_fn=None, primary=True, iters=None))]
+custom read(memory=b, elements_per_thread=ceiling(N/64), mapping_dynamic_vals=()) type(Register[M, N].of(f16))
+custom_index_dims [M, N]
+index {M: 1.0*$T1 + $WG1 : 1 : 1, N: 64*$WG0*ceiling(N/64) + 64*ceiling(N/64)*floor($T0/64) : 1 : 1}
+constraint [WorkgroupConstraint(dim=M, tile_size=1, workgroup_dim=1, apply_fn=None, primary=True, iters=None), WorkgroupConstraint(dim=N, tile_size=64*ceiling(N/64), workgroup_dim=0, apply_fn=None, primary=True, iters=None), WaveConstraint(dim=M, tile_size=1.0, wave_id=$T1, wg_constraint=WorkgroupConstraint(dim=M, tile_size=1, workgroup_dim=1, apply_fn=None, primary=True, iters=None)), WaveConstraint(dim=N, tile_size=64*ceiling(N/64), wave_id=floor($T0/64), wg_constraint=WorkgroupConstraint(dim=N, tile_size=64*ceiling(N/64), workgroup_dim=0, apply_fn=None, primary=True, iters=None))]
+custom mul(lhs=read, rhs=read_1) type(Register[M, N].of(f16))
+custom_index_dims [M, N]
+index {M: 1.0*$T1 + $WG1 : 1 : 1, N: 64*$WG0*ceiling(N/64) + 64*ceiling(N/64)*floor($T0/64) : 1 : 1}
+constraint [WorkgroupConstraint(dim=M, tile_size=1, workgroup_dim=1, apply_fn=None, primary=True, iters=None), WorkgroupConstraint(dim=N, tile_size=64*ceiling(N/64), workgroup_dim=0, apply_fn=None, primary=True, iters=None), WaveConstraint(dim=M, tile_size=1.0, wave_id=$T1, wg_constraint=WorkgroupConstraint(dim=M, tile_size=1, workgroup_dim=1, apply_fn=None, primary=True, iters=None)), WaveConstraint(dim=N, tile_size=64*ceiling(N/64), wave_id=floor($T0/64), wg_constraint=WorkgroupConstraint(dim=N, tile_size=64*ceiling(N/64), workgroup_dim=0, apply_fn=None, primary=True, iters=None))]
+custom sum(arg=mul, dim=N, block=False) type(Register[M].of(f16))
+custom_index_dims [M]
+index {M: 1.0*$T1 + $WG1 : 1 : 1}
+constraint [WorkgroupConstraint(dim=M, tile_size=1, workgroup_dim=1, apply_fn=None, primary=True, iters=None), WorkgroupConstraint(dim=N, tile_size=64*ceiling(N/64), workgroup_dim=0, apply_fn=None, primary=True, iters=None), WaveConstraint(dim=M, tile_size=1.0, wave_id=$T1, wg_constraint=WorkgroupConstraint(dim=M, tile_size=1, workgroup_dim=1, apply_fn=None, primary=True, iters=None)), WaveConstraint(dim=N, tile_size=64*ceiling(N/64), wave_id=floor($T0/64), wg_constraint=WorkgroupConstraint(dim=N, tile_size=64*ceiling(N/64), workgroup_dim=0, apply_fn=None, primary=True, iters=None))]
+custom write(register_=sum_1, memory=c, elements_per_thread=1, mapping_dynamic_vals=()) type(Memory[M].of(f16))
+custom_index_dims [M]
+index {M: 1.0*$T1 + $WG1 : 1 : 1}
+constraint [WorkgroupConstraint(dim=M, tile_size=1, workgroup_dim=1, apply_fn=None, primary=True, iters=None), WorkgroupConstraint(dim=N, tile_size=64*ceiling(N/64), workgroup_dim=0, apply_fn=None, primary=True, iters=None), WaveConstraint(dim=M, tile_size=1.0, wave_id=$T1, wg_constraint=WorkgroupConstraint(dim=M, tile_size=1, workgroup_dim=1, apply_fn=None, primary=True, iters=None)), WaveConstraint(dim=N, tile_size=64*ceiling(N/64), wave_id=floor($T0/64), wg_constraint=WorkgroupConstraint(dim=N, tile_size=64*ceiling(N/64), workgroup_dim=0, apply_fn=None, primary=True, iters=None))]
+custom output(return_vals=(None,)) type(None)
+custom_index_dims []
+index {}
+custom indexing dim [M]
+dim fpor compute stride N
+vector_shapes {M: 1, N: 256}
+reversed symbolic shape
+targetdim N
+M
+1
+vector_shapes {M: 1, N: 256}
+reversed symbolic shape
+targetdim M
+M
+1
+second index {N: 4*(Mod($T0, 64)) : 4 : 1, M: 0 : 1 : 1}
+reduce_mapping {define_interface_op.<locals>.decorator.<locals>.NewSubclass(graph=<torch.fx.graph.Graph object at 0x7fea50d899c0>, fx_node=sum_1, tkw_op_name='sum', _tracing_function=<bound method define_interface_op.<locals>.decorator.<locals>.new_function of ...>, arg=mul, init=None, dim=N, block=False): {N: 4*(Mod($T0, 64)) : 4 : 1, M: 0 : 1 : 1}}
+***Before set_thread_dependent_index_from_reduce***
+
+region_0 [root]:
+
+graph():
+    %a :  [num_users=1] = placeholder[target=a]
+    %b :  [num_users=1] = placeholder[target=b]
+    %c :  [num_users=1] = placeholder[target=c]
+    %read :  [num_users=1] = [read](args = (%a, ceiling(N/64), None, (), None, None), kwargs = {})
+    %read_1 :  [num_users=1] = [read](args = (%b, ceiling(N/64), None, (), None, None), kwargs = {})
+    %mul :  [num_users=1] = [mul](args = (%read, %read_1), kwargs = {})
+    %sum_1 :  [num_users=1] = [sum](args = (%mul, None, N, False), kwargs = {})
+    %write :  [num_users=0] = [write](args = (%sum_1, %c, 1, None, (), None), kwargs = {})
+    return None
+Custom format:
+placeholder(_name=a, _type=Memory[M, N].of(f16)) type(Memory[M, N].of(f16))
+placeholder(_name=b, _type=Memory[M, N].of(f16)) type(Memory[M, N].of(f16))
+placeholder(_name=c, _type=Memory[M].of(f16)) type(Memory[M].of(f16))
+read(memory=a, elements_per_thread=ceiling(N/64), mapping_dynamic_vals=(), index={M: 1.0*$T1 + $WG1 : 1 : 1, N: 64*$WG0*ceiling(N/64) + 64*ceiling(N/64)*floor($T0/64) : 1 : 1}) type(Register[M, N].of(f16))
+read(memory=b, elements_per_thread=ceiling(N/64), mapping_dynamic_vals=(), index={M: 1.0*$T1 + $WG1 : 1 : 1, N: 64*$WG0*ceiling(N/64) + 64*ceiling(N/64)*floor($T0/64) : 1 : 1}) type(Register[M, N].of(f16))
+mul(lhs=read, rhs=read_1, index={M: 1.0*$T1 + $WG1 : 1 : 1, N: 64*$WG0*ceiling(N/64) + 64*ceiling(N/64)*floor($T0/64) : 1 : 1}) type(Register[M, N].of(f16))
+sum(arg=mul, dim=N, block=False, index={M: 1.0*$T1 + $WG1 : 1 : 1}) type(Register[M].of(f16))
+write(register_=sum_1, memory=c, elements_per_thread=1, mapping_dynamic_vals=(), index={M: 1.0*$T1 + $WG1 : 1 : 1}) type(Memory[M].of(f16))
+output(return_vals=(None,)) type(None)
+HELOOOOO {N: 4*(Mod($T0, 64)) : 4 : 1, M: 0 : 1 : 1}
+ret {M: 0 : 1 : 1}
+new sources [(define_py_op.<locals>.decorator.<locals>.NewSubclass(graph=<torch.fx.graph.Graph object at 0x7fea50d899c0>, fx_node=mul, tkw_op_name='mul', _tracing_function=<bound method define_py_op.<locals>.decorator.<locals>.new_function of ...>, lhs=read, rhs=read_1), {N: 4*(Mod($T0, 64)) : 4 : 1, M: 0 : 1 : 1}, {M: 1, N: 256}), (define_interface_op.<locals>.decorator.<locals>.NewSubclass(graph=<torch.fx.graph.Graph object at 0x7fea50d899c0>, fx_node=sum_1, tkw_op_name='sum', _tracing_function=<bound method define_interface_op.<locals>.decorator.<locals>.new_function of ...>, arg=mul, init=None, dim=N, block=False), {M: 0 : 1 : 1}, {M: 1, N: 256})]
+***After set_thread_dependent_index_from_reduce***
+
+region_0 [root]:
+
+graph():
+    %a :  [num_users=1] = placeholder[target=a]
+    %b :  [num_users=1] = placeholder[target=b]
+    %c :  [num_users=1] = placeholder[target=c]
+    %read :  [num_users=1] = [read](args = (%a, ceiling(N/64), None, (), None, None), kwargs = {})
+    %read_1 :  [num_users=1] = [read](args = (%b, ceiling(N/64), None, (), None, None), kwargs = {})
+    %mul :  [num_users=1] = [mul](args = (%read, %read_1), kwargs = {})
+    %sum_1 :  [num_users=1] = [sum](args = (%mul, None, N, False), kwargs = {})
+    %write :  [num_users=0] = [write](args = (%sum_1, %c, 1, None, (), None), kwargs = {})
+    return None
+Custom format:
+placeholder(_name=a, _type=Memory[M, N].of(f16)) type(Memory[M, N].of(f16))
+placeholder(_name=b, _type=Memory[M, N].of(f16)) type(Memory[M, N].of(f16))
+placeholder(_name=c, _type=Memory[M].of(f16)) type(Memory[M].of(f16))
+read(memory=a, elements_per_thread=ceiling(N/64), mapping_dynamic_vals=(), index={M: 1.0*$T1 + $WG1 : 1 : 1, N: 64*$WG0*ceiling(N/64) + 4*(Mod($T0, 64)) + 64*ceiling(N/64)*floor($T0/64) : 4 : 1}) type(Register[M, N].of(f16))
+read(memory=b, elements_per_thread=ceiling(N/64), mapping_dynamic_vals=(), index={M: 1.0*$T1 + $WG1 : 1 : 1, N: 64*$WG0*ceiling(N/64) + 4*(Mod($T0, 64)) + 64*ceiling(N/64)*floor($T0/64) : 4 : 1}) type(Register[M, N].of(f16))
+mul(lhs=read, rhs=read_1, index={M: 1.0*$T1 + $WG1 : 1 : 1, N: 64*$WG0*ceiling(N/64) + 4*(Mod($T0, 64)) + 64*ceiling(N/64)*floor($T0/64) : 4 : 1}) type(Register[M, N].of(f16))
+sum(arg=mul, dim=N, block=False, index={M: 1.0*$T1 + $WG1 : 1 : 1}) type(Register[M].of(f16))
+write(register_=sum_1, memory=c, elements_per_thread=1, mapping_dynamic_vals=(), index={M: 1.0*$T1 + $WG1 : 1 : 1}) type(Memory[M].of(f16))
+output(return_vals=(None,)) type(None)
+#map = affine_map<()[s0] -> (s0 * 4)>
+#translation = #iree_codegen.translation_info<pipeline = None workgroup_size = [64, 1, 1] subgroup_size = 64>
+module attributes {transform.with_named_sequence} {
+  stream.executable private @test {
+    stream.executable.export public @test workgroups() -> (index, index, index) {
+      %c1 = arith.constant 1 : index
+      %c256 = arith.constant 256 : index
+      stream.return %c1, %c256, %c1 : index, index, index
+    }
+    builtin.module {
+      func.func @test(%arg0: !stream.binding, %arg1: !stream.binding, %arg2: !stream.binding) attributes {translation_info = #translation} {
+        %c32_i32 = arith.constant 32 : i32
+        %c16_i32 = arith.constant 16 : i32
+        %c8_i32 = arith.constant 8 : i32
+        %c4_i32 = arith.constant 4 : i32
+        %c2_i32 = arith.constant 2 : i32
+        %c64_i32 = arith.constant 64 : i32
+        %c1_i32 = arith.constant 1 : i32
+        %c0 = arith.constant 0 : index
+        %block_id_y = gpu.block_id  y upper_bound 256
+        %thread_id_x = gpu.thread_id  x upper_bound 64
+        %0 = stream.binding.subspan %arg0[%c0] : !stream.binding -> memref<256x256xf16, strided<[256, 1], offset: ?>>
+        %1 = affine.apply #map()[%thread_id_x]
+        %2 = vector.load %0[%block_id_y, %1] : memref<256x256xf16, strided<[256, 1], offset: ?>>, vector<4xf16>
+        %3 = stream.binding.subspan %arg1[%c0] : !stream.binding -> memref<256x256xf16, strided<[256, 1], offset: ?>>
+        %4 = vector.load %3[%block_id_y, %1] : memref<256x256xf16, strided<[256, 1], offset: ?>>, vector<4xf16>
+        %5 = arith.mulf %2, %4 : vector<4xf16>
+        %6 = vector.extract %5[0] : f16 from vector<4xf16>
+        %7 = vector.extract %5[1] : f16 from vector<4xf16>
+        %8 = arith.addf %6, %7 : f16
+        %9 = vector.extract %5[2] : f16 from vector<4xf16>
+        %10 = arith.addf %8, %9 : f16
+        %11 = vector.extract %5[3] : f16 from vector<4xf16>
+        %12 = arith.addf %10, %11 : f16
+        %13 = vector.broadcast %12 : f16 to vector<1xf16>
+        %shuffleResult, %valid = gpu.shuffle  xor %13, %c1_i32, %c64_i32 : vector<1xf16>
+        %14 = arith.addf %13, %shuffleResult : vector<1xf16>
+        %shuffleResult_0, %valid_1 = gpu.shuffle  xor %14, %c2_i32, %c64_i32 : vector<1xf16>
+        %15 = arith.addf %14, %shuffleResult_0 : vector<1xf16>
+        %shuffleResult_2, %valid_3 = gpu.shuffle  xor %15, %c4_i32, %c64_i32 : vector<1xf16>
+        %16 = arith.addf %15, %shuffleResult_2 : vector<1xf16>
+        %shuffleResult_4, %valid_5 = gpu.shuffle  xor %16, %c8_i32, %c64_i32 : vector<1xf16>
+        %17 = arith.addf %16, %shuffleResult_4 : vector<1xf16>
+        %shuffleResult_6, %valid_7 = gpu.shuffle  xor %17, %c16_i32, %c64_i32 : vector<1xf16>
+        %18 = arith.addf %17, %shuffleResult_6 : vector<1xf16>
+        %shuffleResult_8, %valid_9 = gpu.shuffle  xor %18, %c32_i32, %c64_i32 : vector<1xf16>
+        %19 = arith.addf %18, %shuffleResult_8 : vector<1xf16>
+        %20 = stream.binding.subspan %arg2[%c0] : !stream.binding -> memref<256xf16, strided<[1], offset: ?>>
+        vector.store %19, %20[%block_id_y] : memref<256xf16, strided<[1], offset: ?>>, vector<1xf16>
+        return
+      }
+    }
+  }
+  func.func @isolated_benchmark(%arg0: tensor<256x256xf16>, %arg1: tensor<256x256xf16>, %arg2: tensor<256xf16>) -> tensor<256xf16> {
+    %0 = flow.dispatch @test::@test(%arg0, %arg1, %arg2) : (tensor<256x256xf16>, tensor<256x256xf16>, tensor<256xf16>) -> %arg2
+    return %0 : tensor<256xf16>
+  }
+}
+
+input tensor([[1., 1., 1.,  ..., 1., 1., 1.],
+        [1., 1., 1.,  ..., 1., 1., 1.],
+        [1., 1., 1.,  ..., 1., 1., 1.],
+        ...,
+        [1., 1., 1.,  ..., 1., 1., 1.],
+        [1., 1., 1.,  ..., 1., 1., 1.],
+        [1., 1., 1.,  ..., 1., 1., 1.]], dtype=torch.float16)
+output tensor([256., 256., 256., 256., 256., 256., 256., 256., 256., 256., 256., 256.,
+        256., 256., 256., 256., 256., 256., 256., 256., 256., 256., 256., 256.,
+        256., 256., 256., 256., 256., 256., 256., 256., 256., 256., 256., 256.,
+        256., 256., 256., 256., 256., 256., 256., 256., 256., 256., 256., 256.,
+        256., 256., 256., 256., 256., 256., 256., 256., 256., 256., 256., 256.,
+        256., 256., 256., 256., 256., 256., 256., 256., 256., 256., 256., 256.,
+        256., 256., 256., 256., 256., 256., 256., 256., 256., 256., 256., 256.,
+        256., 256., 256., 256., 256., 256., 256., 256., 256., 256., 256., 256.,
+        256., 256., 256., 256., 256., 256., 256., 256., 256., 256., 256., 256.,
+        256., 256., 256., 256., 256., 256., 256., 256., 256., 256., 256., 256.,
+        256., 256., 256., 256., 256., 256., 256., 256., 256., 256., 256., 256.,
+        256., 256., 256., 256., 256., 256., 256., 256., 256., 256., 256., 256.,
+        256., 256., 256., 256., 256., 256., 256., 256., 256., 256., 256., 256.,
+        256., 256., 256., 256., 256., 256., 256., 256., 256., 256., 256., 256.,
+        256., 256., 256., 256., 256., 256., 256., 256., 256., 256., 256., 256.,
+        256., 256., 256., 256., 256., 256., 256., 256., 256., 256., 256., 256.,
+        256., 256., 256., 256., 256., 256., 256., 256., 256., 256., 256., 256.,
+        256., 256., 256., 256., 256., 256., 256., 256., 256., 256., 256., 256.,
+        256., 256., 256., 256., 256., 256., 256., 256., 256., 256., 256., 256.,
+        256., 256., 256., 256., 256., 256., 256., 256., 256., 256., 256., 256.,
+        256., 256., 256., 256., 256., 256., 256., 256., 256., 256., 256., 256.,
+        256., 256., 256., 256.], dtype=torch.float16)
+ref tensor([256., 256., 256., 256., 256., 256., 256., 256., 256., 256., 256., 256.,
+        256., 256., 256., 256., 256., 256., 256., 256., 256., 256., 256., 256.,
+        256., 256., 256., 256., 256., 256., 256., 256., 256., 256., 256., 256.,
+        256., 256., 256., 256., 256., 256., 256., 256., 256., 256., 256., 256.,
+        256., 256., 256., 256., 256., 256., 256., 256., 256., 256., 256., 256.,
+        256., 256., 256., 256., 256., 256., 256., 256., 256., 256., 256., 256.,
+        256., 256., 256., 256., 256., 256., 256., 256., 256., 256., 256., 256.,
+        256., 256., 256., 256., 256., 256., 256., 256., 256., 256., 256., 256.,
+        256., 256., 256., 256., 256., 256., 256., 256., 256., 256., 256., 256.,
+        256., 256., 256., 256., 256., 256., 256., 256., 256., 256., 256., 256.,
+        256., 256., 256., 256., 256., 256., 256., 256., 256., 256., 256., 256.,
+        256., 256., 256., 256., 256., 256., 256., 256., 256., 256., 256., 256.,
+        256., 256., 256., 256., 256., 256., 256., 256., 256., 256., 256., 256.,
+        256., 256., 256., 256., 256., 256., 256., 256., 256., 256., 256., 256.,
+        256., 256., 256., 256., 256., 256., 256., 256., 256., 256., 256., 256.,
+        256., 256., 256., 256., 256., 256., 256., 256., 256., 256., 256., 256.,
+        256., 256., 256., 256., 256., 256., 256., 256., 256., 256., 256., 256.,
+        256., 256., 256., 256., 256., 256., 256., 256., 256., 256., 256., 256.,
+        256., 256., 256., 256., 256., 256., 256., 256., 256., 256., 256., 256.,
+        256., 256., 256., 256., 256., 256., 256., 256., 256., 256., 256., 256.,
+        256., 256., 256., 256., 256., 256., 256., 256., 256., 256., 256., 256.,
+        256., 256., 256., 256.], device='cuda:0', dtype=torch.float16)
+.
+
+============================== 1 passed in 2.85s ===============================
