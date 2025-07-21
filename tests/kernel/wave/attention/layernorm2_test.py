@@ -78,9 +78,8 @@ def test_reduce_sum(shape, request):
         c: tkl.Memory[M, ADDRESS_SPACE, tkl.f16],
     ):
         lhs = tkw.read(a, elements_per_thread=ELEMS_PER_THREAD)
-        rhs = tkw.read(b, elements_per_thread=ELEMS_PER_THREAD)
-        res = lhs * rhs
-        res = tkw.sum(res, dim=N)
+        res = tkw.sum(lhs, dim=N)
+        # other=tkw.sum(lhs,dim=M)
         tkw.write(res, c, elements_per_thread=1)
 
     print(shape)
@@ -107,8 +106,14 @@ def test_reduce_sum(shape, request):
         canonicalize=True,
         run_bench=run_bench,
         print_mlir=True,
-        print_ir_after=["set_thread_dependent_index_from_reduce"],
-        print_ir_before=["set_thread_dependent_index_from_reduce"],
+        print_ir_after=[
+            "set_thread_independent_index",
+            "get_reduce_mapping",
+            "set_thread_dependent_index_from_reduce",
+            "expand_graph",
+            "decompose_reduce_ops",
+        ],
+        print_ir_before=["decompose_reduce_ops"],
     )
     options = set_default_run_config(options)
     test = wave_compile(options, test)

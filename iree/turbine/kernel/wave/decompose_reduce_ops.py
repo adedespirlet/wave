@@ -296,6 +296,7 @@ def decompose_reduce_ops(
       4. Accumulator Reduce: Each thread reduces it's intermediate reduced
          results with the accumulator it holds.
     """
+    print("Hello")
     # Get reducte nodes.
     reduce_nodes = trace.walk(lambda node: isinstance(get_custom(node), ReduceOp))
     if not reduce_nodes:

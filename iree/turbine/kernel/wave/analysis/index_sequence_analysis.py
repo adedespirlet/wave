@@ -381,6 +381,7 @@ def set_thread_independent_index(
         else:
             index.update({dim: IndexSequence(0, 1, 1)})
 
+    print("intial index", index)
     custom.index = index
 
 
@@ -840,6 +841,7 @@ def get_reduce_mapping(
         index = {}
 
         dim = custom.dim
+        print("reduc dim", dim)
 
         # Compute the index sequence for the reduction dimension based on the
         # threads per wave and the vector size.
@@ -856,7 +858,10 @@ def get_reduce_mapping(
             dim, 0, elements_per_thread, stride
         )
 
+        print("inde[dim]", index[dim])
+        print("entering indexing loops dim")
         for dim in custom.indexing_dims:
+            print("dim", dim)
             elements_per_thread = 1
             stride = compute_stride(
                 custom.indexing_dims, hardware_constraint.vector_shapes, dim
@@ -870,9 +875,11 @@ def get_reduce_mapping(
             else:
                 continue
 
-            index[dim] = hardware_constraint.apply_read_write_thread_mapping(
-                dim, workgroup_dim, elements_per_thread, stride
-            )
+            index[dim] = IndexSequence(0, elements_per_thread, stride)
+            # index[dim] = hardware_constraint.apply_read_write_thread_mapping(
+            #     dim, workgroup_dim, elements_per_thread, stride
+            # )
+            print("print other index", index[dim])
 
         reduce_mapping[custom] = index
 
@@ -888,6 +895,7 @@ def populate_reduce_source_indices(
     """
     Populate the source indices for the reduce op.
     """
+    print("new index", index)
     vector_shapes = hardware_constraint.vector_shapes
     ret = []
     if isinstance(node.arg, Sequence):

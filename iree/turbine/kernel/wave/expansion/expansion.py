@@ -774,6 +774,7 @@ def expand_graph(
         )
     expansion_context = ExpansionContext()
     for custom in leaf_ops:
+        print("leafs ops:", custom)
         for dim_combination in get_dim_combinations(custom, constraints):
             dfs(
                 custom,

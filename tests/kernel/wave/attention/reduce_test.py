@@ -48,7 +48,7 @@ from ..common.shapes import get_test_shapes
 
 @require_e2e
 # @pytest.mark.parametrize("shape", get_test_shapes("test_block_reduce"))
-@pytest.mark.parametrize("shape", [(256, 256, 16)])
+@pytest.mark.parametrize("shape", [(256, 256, 256)])
 def test_reduce_sum(shape, request):
     run_bench = request.config.getoption("--runperf")
     M = tkl.sym.M
@@ -56,34 +56,41 @@ def test_reduce_sum(shape, request):
     K = tkl.sym.K
     wave_size = 64
     BLOCK_M = 1
-    BLOCK_N = sympy.ceiling(N / wave_size) * wave_size
-    ELEMS_PER_THREAD = BLOCK_N // wave_size
+    BLOCK_K = sympy.ceiling(K / wave_size) * wave_size
+    # BLOCK_N = sympy.ceiling(N / wave_size) * wave_size
+    # ELEMS_PER_THREAD = BLOCK_N // wave_size
+
+    BLOCK_N = 1
+    ELEMS_PER_THREAD = BLOCK_K // wave_size
+
     ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
 
     constraints: list[tkw.Constraint] = [
         tkw.HardwareConstraint(
             threads_per_wave=64,
             waves_per_block=(1, 1, 1),
-            vector_shapes={M: 1, N: BLOCK_N, K: 16},
+            vector_shapes={M: 1, N: 1, K: 256},
         )
     ]
-    constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 1)]
+    constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 2)]
     constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 0)]
+    constraints += [tkw.WorkgroupConstraint(K, BLOCK_K, 1)]
     constraints += [tkw.WaveConstraint(M, BLOCK_M / 1)]
     constraints += [tkw.WaveConstraint(N, BLOCK_N / 1)]
+    constraints += [tkw.WaveConstraint(K, BLOCK_K / 1)]
 
     @tkw.wave(constraints)
     def test(
         a: tkl.Memory[M, N, K, ADDRESS_SPACE, tkl.f16],
         b: tkl.Memory[M, N, K, ADDRESS_SPACE, tkl.f16],
-        c: tkl.Memory[M, ADDRESS_SPACE, tkl.f16],
+        c: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
     ):
         lhs = tkw.read(a, elements_per_thread=ELEMS_PER_THREAD)
         # rhs = tkw.read(b, elements_per_thread=ELEMS_PER_THREAD)
         # res = lhs * rhs
-        flattened_reg = tkw.reshape(lhs, target_vector_shape={N: N * K})
+        # flattened_reg = tkw.reshape(lhs, target_vector_shape={N: N * K})
 
-        res = tkw.sum(flattened_reg, dim=N)
+        res = tkw.sum(lhs, dim=K)
 
         tkw.write(res, c, elements_per_thread=1)
 
@@ -91,7 +98,7 @@ def test_reduce_sum(shape, request):
     torch.manual_seed(1)
     # a = device_randn(shape, dtype=torch.float16)
     # b = device_randn(shape, dtype=torch.float16)
-    c = device_zeros(shape[0], dtype=torch.float16)
+    c = device_zeros((shape[0], shape[1]), dtype=torch.float16)
 
     # a = (
     #     device_arange(shape[0] * shape[1], dtype=torch.float16)
@@ -106,11 +113,14 @@ def test_reduce_sum(shape, request):
         subs={
             M: shape[0],
             N: shape[1],
+            K: shape[2],
             ADDRESS_SPACE: tkl.AddressSpace.GLOBAL_MEMORY.value,
         },
         canonicalize=True,
         run_bench=run_bench,
         print_mlir=True,
+        print_ir_after=["set_thread_dependent_index_from_reduce", "expand_graph"],
+        print_ir_before=["set_thread_dependent_index_from_reduce", "expand graph"],
     )
     options = set_default_run_config(options)
     test = wave_compile(options, test)
