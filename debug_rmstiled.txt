@@ -1,0 +1,346 @@
+============================= test session starts ==============================
+platform linux -- Python 3.10.12, pytest-8.4.1, pluggy-1.6.0
+rootdir: /home/adespirl/git/wave
+configfile: setup.cfg
+collected 1 item
+
+tests/kernel/wave/rmsnorm_tiling_test.py ***Before set_thread_dependent_index_from_reduce***
+
+region_1 [root]:
+
+graph():
+    %a :  [num_users=2] = placeholder[target=a]
+    %gamma :  [num_users=0] = placeholder[target=gamma]
+    %c :  [num_users=1] = placeholder[target=c]
+    %register :  [num_users=1] = [register](args = ((M,), f16, EMB_SIZE), kwargs = {})
+    %register_1 :  [num_users=1] = [register](args = ((M,), f16, 0.0), kwargs = {})
+    %iterate :  [num_users=1] = [iterate](args = (N, [%register_1], region_0, [%a], 1, None, None), kwargs = {})
+    %get_result :  [num_users=1] = [get_result](args = (%iterate, 0), kwargs = {})
+    %truediv :  [num_users=1] = [truediv](args = (%get_result, %register), kwargs = {})
+    %sqrt :  [num_users=1] = [sqrt](args = (%truediv,), kwargs = {})
+    %broadcast :  [num_users=1] = [broadcast](args = (%sqrt, [M, N]), kwargs = {})
+    %read :  [num_users=1] = [read](args = (%a, ELEMS_PER_THREAD, None, (), None, None), kwargs = {})
+    %truediv_1 :  [num_users=1] = [truediv](args = (%read, %broadcast), kwargs = {})
+    %write :  [num_users=0] = [write](args = (%truediv_1, %c, None, None, (), None), kwargs = {})
+    return None
+Custom format:
+placeholder(_name=a, _type=Memory[M, N].of(f16)) type(Memory[M, N].of(f16))
+placeholder(_name=gamma, _type=Memory[N].of(f16)) type(Memory[N].of(f16))
+placeholder(_name=c, _type=Memory[M, N].of(f16)) type(Memory[M, N].of(f16))
+register(shape=(M,), dtype=f16, value=EMB_SIZE, index={M: $T1*BLOCK_M + $WG1*BLOCK_M : 1 : 1}) type(Register[M].of(f16))
+register(shape=(M,), dtype=f16, value=0.0, index={M: $T1*BLOCK_M + $WG1*BLOCK_M : 1 : 1}) type(Register[M].of(f16))
+iterate(axis=N, init_args=[register_1], subgraph_name=region_0, implicit_captures=[a], step=1) type(Register[M].of(f16))
+get_result(value=iterate, res_idx=0, index={M: $T1*BLOCK_M + $WG1*BLOCK_M : 1 : 1}) type(Register[M].of(f16))
+truediv(lhs=get_result, rhs=register, index={M: $T1*BLOCK_M + $WG1*BLOCK_M : 1 : 1}) type(Register[M].of(f16))
+sqrt(arg=truediv, index={M: $T1*BLOCK_M + $WG1*BLOCK_M : 1 : 1}) type(Register[M].of(f16))
+broadcast(arg=sqrt, target_shape=[M, N], index={M: $T1*BLOCK_M + $WG1*BLOCK_M : 1 : 1, N: $WG0*N + N*floor($T0/64)/4 : 1 : 1}) type(Register[M, N].of(f16))
+read(memory=a, elements_per_thread=ELEMS_PER_THREAD, mapping_dynamic_vals=(), index={M: $T1*BLOCK_M + $WG1*BLOCK_M : 1 : 1, N: $WG0*N + N*floor($T0/64)/4 : 1 : 1}) type(Register[M, N].of(f16))
+truediv(lhs=read, rhs=broadcast, index={M: $T1*BLOCK_M + $WG1*BLOCK_M : 1 : 1, N: $WG0*N + N*floor($T0/64)/4 : 1 : 1}) type(Register[M, N].of(f16))
+write(register_=truediv_1, memory=c, mapping_dynamic_vals=(), index={M: $T1*BLOCK_M + $WG1*BLOCK_M : 1 : 1, N: $WG0*N + N*floor($T0/64)/4 : 1 : 1}) type(Memory[M, N].of(f16))
+output(return_vals=(None,)) type(None)
+region_0:
+
+graph():
+    %partial_red :  [num_users=1] = placeholder[target=partial_red]
+    %a :  [num_users=1] = placeholder[target=a]
+    %read :  [num_users=1] = [read](args = (%a, ELEMS_PER_THREAD, None, (), None, None), kwargs = {})
+    %mul :  [num_users=1] = [mul](args = (%read, %read), kwargs = {})
+    %sum_1 :  [num_users=1] = [sum](args = (%mul, %partial_red, N, False), kwargs = {})
+    return sum_1
+Custom format:
+placeholder(_name=partial_red, _type=Register[M].of(f16)) type(Register[M].of(f16))
+placeholder(_name=a, _type=Memory[M, N].of(f16)) type(Memory[M, N].of(f16))
+read(memory=a, elements_per_thread=ELEMS_PER_THREAD, mapping_dynamic_vals=(), index={M: $T1*BLOCK_M + $WG1*BLOCK_M : 1 : 1, N: $ARGN*N/4 + $WG0*N + N*floor($T0/64)/4 : 1 : 1}) type(Register[M, N].of(f16))
+mul(lhs=read, rhs=read, index={M: $T1*BLOCK_M + $WG1*BLOCK_M : 1 : 1, N: $ARGN*N/4 + $WG0*N + N*floor($T0/64)/4 : 1 : 1}) type(Register[M, N].of(f16))
+sum(arg=mul, init=partial_red, dim=N, block=False, index={M: $T1*BLOCK_M + $WG1*BLOCK_M : 1 : 1}) type(Register[M].of(f16))
+output(return_vals=(sum_1,)) type(Register[M].of(f16))
+***After set_thread_dependent_index_from_reduce***
+
+region_1 [root]:
+
+graph():
+    %a :  [num_users=2] = placeholder[target=a]
+    %gamma :  [num_users=0] = placeholder[target=gamma]
+    %c :  [num_users=1] = placeholder[target=c]
+    %register :  [num_users=1] = [register](args = ((M,), f16, EMB_SIZE), kwargs = {})
+    %register_1 :  [num_users=1] = [register](args = ((M,), f16, 0.0), kwargs = {})
+    %iterate :  [num_users=1] = [iterate](args = (N, [%register_1], region_0, [%a], 1, None, None), kwargs = {})
+    %get_result :  [num_users=1] = [get_result](args = (%iterate, 0), kwargs = {})
+    %truediv :  [num_users=1] = [truediv](args = (%get_result, %register), kwargs = {})
+    %sqrt :  [num_users=1] = [sqrt](args = (%truediv,), kwargs = {})
+    %broadcast :  [num_users=1] = [broadcast](args = (%sqrt, [M, N]), kwargs = {})
+    %read :  [num_users=1] = [read](args = (%a, ELEMS_PER_THREAD, None, (), None, None), kwargs = {})
+    %truediv_1 :  [num_users=1] = [truediv](args = (%read, %broadcast), kwargs = {})
+    %write :  [num_users=0] = [write](args = (%truediv_1, %c, None, None, (), None), kwargs = {})
+    return None
+Custom format:
+placeholder(_name=a, _type=Memory[M, N].of(f16)) type(Memory[M, N].of(f16))
+placeholder(_name=gamma, _type=Memory[N].of(f16)) type(Memory[N].of(f16))
+placeholder(_name=c, _type=Memory[M, N].of(f16)) type(Memory[M, N].of(f16))
+register(shape=(M,), dtype=f16, value=EMB_SIZE, index={M: $T1*BLOCK_M + $WG1*BLOCK_M : 1 : 1}) type(Register[M].of(f16))
+register(shape=(M,), dtype=f16, value=0.0, index={M: $T1*BLOCK_M + $WG1*BLOCK_M : 1 : 1}) type(Register[M].of(f16))
+iterate(axis=N, init_args=[register_1], subgraph_name=region_0, implicit_captures=[a], step=1) type(Register[M].of(f16))
+get_result(value=iterate, res_idx=0, index={M: $T1*BLOCK_M + $WG1*BLOCK_M : 1 : 1}) type(Register[M].of(f16))
+truediv(lhs=get_result, rhs=register, index={M: $T1*BLOCK_M + $WG1*BLOCK_M : 1 : 1}) type(Register[M].of(f16))
+sqrt(arg=truediv, index={M: $T1*BLOCK_M + $WG1*BLOCK_M : 1 : 1}) type(Register[M].of(f16))
+broadcast(arg=sqrt, target_shape=[M, N], index={M: $T1*BLOCK_M + $WG1*BLOCK_M : 1 : 1, N: $WG0*N + N*floor($T0/64)/4 : 1 : 1}) type(Register[M, N].of(f16))
+read(memory=a, elements_per_thread=ELEMS_PER_THREAD, mapping_dynamic_vals=(), index={M: $T1*BLOCK_M + $WG1*BLOCK_M : 1 : 1, N: $WG0*N + N*floor($T0/64)/4 : 1 : 1}) type(Register[M, N].of(f16))
+truediv(lhs=read, rhs=broadcast, index={M: $T1*BLOCK_M + $WG1*BLOCK_M : 1 : 1, N: $WG0*N + N*floor($T0/64)/4 : 1 : 1}) type(Register[M, N].of(f16))
+write(register_=truediv_1, memory=c, mapping_dynamic_vals=(), index={M: $T1*BLOCK_M + $WG1*BLOCK_M : 1 : 1, N: $WG0*N + N*floor($T0/64)/4 : 1 : 1}) type(Memory[M, N].of(f16))
+output(return_vals=(None,)) type(None)
+region_0:
+
+graph():
+    %partial_red :  [num_users=1] = placeholder[target=partial_red]
+    %a :  [num_users=1] = placeholder[target=a]
+    %read :  [num_users=1] = [read](args = (%a, ELEMS_PER_THREAD, None, (), None, None), kwargs = {})
+    %mul :  [num_users=1] = [mul](args = (%read, %read), kwargs = {})
+    %sum_1 :  [num_users=1] = [sum](args = (%mul, %partial_red, N, False), kwargs = {})
+    return sum_1
+Custom format:
+placeholder(_name=partial_red, _type=Register[M].of(f16)) type(Register[M].of(f16))
+placeholder(_name=a, _type=Memory[M, N].of(f16)) type(Memory[M, N].of(f16))
+read(memory=a, elements_per_thread=ELEMS_PER_THREAD, mapping_dynamic_vals=(), index={M: $T1*BLOCK_M + $WG1*BLOCK_M : 1 : 1, N: $ARGN*N/4 + $WG0*N + N*floor($T0/64)/4 + 4*(Mod($T0, 64)) : 4 : 1}) type(Register[M, N].of(f16))
+mul(lhs=read, rhs=read, index={M: $T1*BLOCK_M + $WG1*BLOCK_M : 1 : 1, N: $ARGN*N/4 + $WG0*N + N*floor($T0/64)/4 + 4*(Mod($T0, 64)) : 4 : 1}) type(Register[M, N].of(f16))
+sum(arg=mul, init=partial_red, dim=N, block=False, index={M: $T1*BLOCK_M + $WG1*BLOCK_M : 1 : 1}) type(Register[M].of(f16))
+output(return_vals=(sum_1,)) type(Register[M].of(f16))
+***After expand_graph***
+
+region_1 [root]:
+
+graph():
+    %a :  [num_users=6] = placeholder[target=a]
+    %gamma :  [num_users=0] = placeholder[target=gamma]
+    %c :  [num_users=5] = placeholder[target=c]
+    %register_M:0_N:0 :  [num_users=1] = [register](args = ((M,), f16, EMB_SIZE), kwargs = {})
+    %register_1_M:0_N:0 :  [num_users=1] = [register](args = ((M,), f16, 0.0), kwargs = {})
+    %iterate :  [num_users=1] = [iterate](args = (N, [%register_1_M:0_N:0], region_0, [%a], 1, None, None), kwargs = {})
+    %get_result_M:0_N:0 :  [num_users=1] = [get_result](args = (%iterate, 0), kwargs = {})
+    %truediv_M:0_N:0 :  [num_users=1] = [truediv](args = (%get_result_M:0_N:0, %register_M:0_N:0), kwargs = {})
+    %sqrt_M:0_N:0 :  [num_users=5] = [sqrt](args = (%truediv_M:0_N:0,), kwargs = {})
+    %broadcast_M:0_N:0 :  [num_users=1] = [broadcast](args = (%sqrt_M:0_N:0, [M, N]), kwargs = {})
+    %broadcast_M:0_N:1 :  [num_users=1] = [broadcast](args = (%sqrt_M:0_N:0, [M, N]), kwargs = {})
+    %broadcast_M:0_N:2 :  [num_users=1] = [broadcast](args = (%sqrt_M:0_N:0, [M, N]), kwargs = {})
+    %broadcast_M:0_N:3 :  [num_users=1] = [broadcast](args = (%sqrt_M:0_N:0, [M, N]), kwargs = {})
+    %broadcast_M:0_N:4 :  [num_users=1] = [broadcast](args = (%sqrt_M:0_N:0, [M, N]), kwargs = {})
+    %read_M:0_N:0 :  [num_users=1] = [read](args = (%a, ELEMS_PER_THREAD, None, (), None, None), kwargs = {})
+    %read_M:0_N:1 :  [num_users=1] = [read](args = (%a, ELEMS_PER_THREAD, None, (), None, None), kwargs = {})
+    %read_M:0_N:2 :  [num_users=1] = [read](args = (%a, ELEMS_PER_THREAD, None, (), None, None), kwargs = {})
+    %read_M:0_N:3 :  [num_users=1] = [read](args = (%a, ELEMS_PER_THREAD, None, (), None, None), kwargs = {})
+    %read_M:0_N:4 :  [num_users=1] = [read](args = (%a, ELEMS_PER_THREAD, None, (), None, None), kwargs = {})
+    %truediv_1_M:0_N:0 :  [num_users=1] = [truediv](args = (%read_M:0_N:0, %broadcast_M:0_N:0), kwargs = {})
+    %truediv_1_M:0_N:1 :  [num_users=1] = [truediv](args = (%read_M:0_N:1, %broadcast_M:0_N:1), kwargs = {})
+    %truediv_1_M:0_N:2 :  [num_users=1] = [truediv](args = (%read_M:0_N:2, %broadcast_M:0_N:2), kwargs = {})
+    %truediv_1_M:0_N:3 :  [num_users=1] = [truediv](args = (%read_M:0_N:3, %broadcast_M:0_N:3), kwargs = {})
+    %truediv_1_M:0_N:4 :  [num_users=1] = [truediv](args = (%read_M:0_N:4, %broadcast_M:0_N:4), kwargs = {})
+    %write_M:0_N:0 :  [num_users=0] = [write](args = (%truediv_1_M:0_N:0, %c, 1, None, (), None), kwargs = {})
+    %write_M:0_N:1 :  [num_users=0] = [write](args = (%truediv_1_M:0_N:1, %c, 1, None, (), None), kwargs = {})
+    %write_M:0_N:2 :  [num_users=0] = [write](args = (%truediv_1_M:0_N:2, %c, 1, None, (), None), kwargs = {})
+    %write_M:0_N:3 :  [num_users=0] = [write](args = (%truediv_1_M:0_N:3, %c, 1, None, (), None), kwargs = {})
+    %write_M:0_N:4 :  [num_users=0] = [write](args = (%truediv_1_M:0_N:4, %c, 1, None, (), None), kwargs = {})
+    return None
+Custom format:
+placeholder(_name=a, _type=Memory[M, N].of(f16)) type(Memory[M, N].of(f16))
+placeholder(_name=gamma, _type=Memory[N].of(f16)) type(Memory[N].of(f16))
+placeholder(_name=c, _type=Memory[M, N].of(f16)) type(Memory[M, N].of(f16))
+register(shape=(M,), dtype=f16, value=EMB_SIZE, index={M: $T1*BLOCK_M + $WG1*BLOCK_M : 1 : 1}) type(Register[M].of(f16))
+register(shape=(M,), dtype=f16, value=0.0, index={M: $T1*BLOCK_M + $WG1*BLOCK_M : 1 : 1}) type(Register[M].of(f16))
+iterate(axis=N, init_args=[register_1_M:0_N:0], subgraph_name=region_0, implicit_captures=[a], step=1) type(Register[M].of(f16))
+get_result(value=iterate, res_idx=0, index={M: $T1*BLOCK_M + $WG1*BLOCK_M : 1 : 1}) type(Register[M].of(f16))
+truediv(lhs=get_result_M:0_N:0, rhs=register_M:0_N:0, index={M: $T1*BLOCK_M + $WG1*BLOCK_M : 1 : 1}) type(Register[M].of(f16))
+sqrt(arg=truediv_M:0_N:0, index={M: $T1*BLOCK_M + $WG1*BLOCK_M : 1 : 1}) type(Register[M].of(f16))
+broadcast(arg=sqrt_M:0_N:0, target_shape=[M, N], index={M: $T1*BLOCK_M + $WG1*BLOCK_M : 1 : 1, N: $WG0*N + N*floor($T0/64)/4 : 1 : 1}) type(Register[M, N].of(f16))
+broadcast(arg=sqrt_M:0_N:0, target_shape=[M, N], index={M: $T1*BLOCK_M + $WG1*BLOCK_M : 1 : 1, N: $WG0*N + N*floor($T0/64)/4 : 1 : 1}) type(Register[M, N].of(f16))
+broadcast(arg=sqrt_M:0_N:0, target_shape=[M, N], index={M: $T1*BLOCK_M + $WG1*BLOCK_M : 1 : 1, N: $WG0*N + N*floor($T0/64)/4 : 1 : 1}) type(Register[M, N].of(f16))
+broadcast(arg=sqrt_M:0_N:0, target_shape=[M, N], index={M: $T1*BLOCK_M + $WG1*BLOCK_M : 1 : 1, N: $WG0*N + N*floor($T0/64)/4 : 1 : 1}) type(Register[M, N].of(f16))
+broadcast(arg=sqrt_M:0_N:0, target_shape=[M, N], index={M: $T1*BLOCK_M + $WG1*BLOCK_M : 1 : 1, N: $WG0*N + N*floor($T0/64)/4 : 1 : 1}) type(Register[M, N].of(f16))
+read(memory=a, elements_per_thread=ELEMS_PER_THREAD, mapping_dynamic_vals=(), index={M: $T1*BLOCK_M + $WG1*BLOCK_M : 1 : 1, N: $WG0*N + N*floor($T0/64)/4 : 1 : 1}) type(Register[M, N].of(f16))
+read(memory=a, elements_per_thread=ELEMS_PER_THREAD, mapping_dynamic_vals=(), index={M: $T1*BLOCK_M + $WG1*BLOCK_M : 1 : 1, N: $WG0*N + N*floor($T0/64)/4 : 1 : 1}) type(Register[M, N].of(f16))
+read(memory=a, elements_per_thread=ELEMS_PER_THREAD, mapping_dynamic_vals=(), index={M: $T1*BLOCK_M + $WG1*BLOCK_M : 1 : 1, N: $WG0*N + N*floor($T0/64)/4 : 1 : 1}) type(Register[M, N].of(f16))
+read(memory=a, elements_per_thread=ELEMS_PER_THREAD, mapping_dynamic_vals=(), index={M: $T1*BLOCK_M + $WG1*BLOCK_M : 1 : 1, N: $WG0*N + N*floor($T0/64)/4 : 1 : 1}) type(Register[M, N].of(f16))
+read(memory=a, elements_per_thread=ELEMS_PER_THREAD, mapping_dynamic_vals=(), index={M: $T1*BLOCK_M + $WG1*BLOCK_M : 1 : 1, N: $WG0*N + N*floor($T0/64)/4 : 1 : 1}) type(Register[M, N].of(f16))
+truediv(lhs=read_M:0_N:0, rhs=broadcast_M:0_N:0, index={M: $T1*BLOCK_M + $WG1*BLOCK_M : 1 : 1, N: $WG0*N + N*floor($T0/64)/4 : 1 : 1}) type(Register[M, N].of(f16))
+truediv(lhs=read_M:0_N:1, rhs=broadcast_M:0_N:1, index={M: $T1*BLOCK_M + $WG1*BLOCK_M : 1 : 1, N: $WG0*N + N*floor($T0/64)/4 : 1 : 1}) type(Register[M, N].of(f16))
+truediv(lhs=read_M:0_N:2, rhs=broadcast_M:0_N:2, index={M: $T1*BLOCK_M + $WG1*BLOCK_M : 1 : 1, N: $WG0*N + N*floor($T0/64)/4 : 1 : 1}) type(Register[M, N].of(f16))
+truediv(lhs=read_M:0_N:3, rhs=broadcast_M:0_N:3, index={M: $T1*BLOCK_M + $WG1*BLOCK_M : 1 : 1, N: $WG0*N + N*floor($T0/64)/4 : 1 : 1}) type(Register[M, N].of(f16))
+truediv(lhs=read_M:0_N:4, rhs=broadcast_M:0_N:4, index={M: $T1*BLOCK_M + $WG1*BLOCK_M : 1 : 1, N: $WG0*N + N*floor($T0/64)/4 : 1 : 1}) type(Register[M, N].of(f16))
+write(register_=truediv_1_M:0_N:0, memory=c, elements_per_thread=1, mapping_dynamic_vals=(), index={M: $T1*BLOCK_M + $WG1*BLOCK_M : 1 : 1, N: $WG0*N + N*floor($T0/64)/4 : 1 : 1}) type(Memory[M, N].of(f16))
+write(register_=truediv_1_M:0_N:1, memory=c, elements_per_thread=1, mapping_dynamic_vals=(), index={M: $T1*BLOCK_M + $WG1*BLOCK_M : 1 : 1, N: $WG0*N + N*floor($T0/64)/4 : 1 : 1}) type(Memory[M, N].of(f16))
+write(register_=truediv_1_M:0_N:2, memory=c, elements_per_thread=1, mapping_dynamic_vals=(), index={M: $T1*BLOCK_M + $WG1*BLOCK_M : 1 : 1, N: $WG0*N + N*floor($T0/64)/4 : 1 : 1}) type(Memory[M, N].of(f16))
+write(register_=truediv_1_M:0_N:3, memory=c, elements_per_thread=1, mapping_dynamic_vals=(), index={M: $T1*BLOCK_M + $WG1*BLOCK_M : 1 : 1, N: $WG0*N + N*floor($T0/64)/4 : 1 : 1}) type(Memory[M, N].of(f16))
+write(register_=truediv_1_M:0_N:4, memory=c, elements_per_thread=1, mapping_dynamic_vals=(), index={M: $T1*BLOCK_M + $WG1*BLOCK_M : 1 : 1, N: $WG0*N + N*floor($T0/64)/4 : 1 : 1}) type(Memory[M, N].of(f16))
+output(return_vals=(None,)) type(None)
+region_0:
+
+graph():
+    %partial_red_M:0_N:0 :  [num_users=1] = placeholder[target=partial_red]
+    %a :  [num_users=5] = placeholder[target=a]
+    %read_M:0_N:0 :  [num_users=1] = [read](args = (%a, ELEMS_PER_THREAD, None, (), None, None), kwargs = {})
+    %read_M:0_N:1 :  [num_users=1] = [read](args = (%a, ELEMS_PER_THREAD, None, (), None, None), kwargs = {})
+    %read_M:0_N:2 :  [num_users=1] = [read](args = (%a, ELEMS_PER_THREAD, None, (), None, None), kwargs = {})
+    %read_M:0_N:3 :  [num_users=1] = [read](args = (%a, ELEMS_PER_THREAD, None, (), None, None), kwargs = {})
+    %read_M:0_N:4 :  [num_users=1] = [read](args = (%a, ELEMS_PER_THREAD, None, (), None, None), kwargs = {})
+    %mul_M:0_N:0 :  [num_users=1] = [mul](args = (%read_M:0_N:0, %read_M:0_N:0), kwargs = {})
+    %mul_M:0_N:1 :  [num_users=1] = [mul](args = (%read_M:0_N:1, %read_M:0_N:1), kwargs = {})
+    %mul_M:0_N:2 :  [num_users=1] = [mul](args = (%read_M:0_N:2, %read_M:0_N:2), kwargs = {})
+    %mul_M:0_N:3 :  [num_users=1] = [mul](args = (%read_M:0_N:3, %read_M:0_N:3), kwargs = {})
+    %mul_M:0_N:4 :  [num_users=1] = [mul](args = (%read_M:0_N:4, %read_M:0_N:4), kwargs = {})
+    %sum_1_M:0_N:0 :  [num_users=1] = [sum](args = ([%mul_M:0_N:0, %mul_M:0_N:1, %mul_M:0_N:2, %mul_M:0_N:3, %mul_M:0_N:4], %partial_red_M:0_N:0, N, False), kwargs = {})
+    return [sum_1_M:0_N:0]
+Custom format:
+placeholder(_name=partial_red_M:0_N:0, _type=Register[M].of(f16)) type(Register[M].of(f16))
+placeholder(_name=a, _type=Memory[M, N].of(f16)) type(Memory[M, N].of(f16))
+read(memory=a, elements_per_thread=ELEMS_PER_THREAD, mapping_dynamic_vals=(), index={M: $T1*BLOCK_M + $WG1*BLOCK_M : 1 : 1, N: $ARGN*N/4 + $WG0*N + N*floor($T0/64)/4 + 4*(Mod($T0, 64)) : 4 : 1}) type(Register[M, N].of(f16))
+read(memory=a, elements_per_thread=ELEMS_PER_THREAD, mapping_dynamic_vals=(), index={M: $T1*BLOCK_M + $WG1*BLOCK_M : 1 : 1, N: $ARGN*N/4 + $WG0*N + N*floor($T0/64)/4 + 4*(Mod($T0, 64)) : 4 : 1}) type(Register[M, N].of(f16))
+read(memory=a, elements_per_thread=ELEMS_PER_THREAD, mapping_dynamic_vals=(), index={M: $T1*BLOCK_M + $WG1*BLOCK_M : 1 : 1, N: $ARGN*N/4 + $WG0*N + N*floor($T0/64)/4 + 4*(Mod($T0, 64)) : 4 : 1}) type(Register[M, N].of(f16))
+read(memory=a, elements_per_thread=ELEMS_PER_THREAD, mapping_dynamic_vals=(), index={M: $T1*BLOCK_M + $WG1*BLOCK_M : 1 : 1, N: $ARGN*N/4 + $WG0*N + N*floor($T0/64)/4 + 4*(Mod($T0, 64)) : 4 : 1}) type(Register[M, N].of(f16))
+read(memory=a, elements_per_thread=ELEMS_PER_THREAD, mapping_dynamic_vals=(), index={M: $T1*BLOCK_M + $WG1*BLOCK_M : 1 : 1, N: $ARGN*N/4 + $WG0*N + N*floor($T0/64)/4 + 4*(Mod($T0, 64)) : 4 : 1}) type(Register[M, N].of(f16))
+mul(lhs=read_M:0_N:0, rhs=read_M:0_N:0, index={M: $T1*BLOCK_M + $WG1*BLOCK_M : 1 : 1, N: $ARGN*N/4 + $WG0*N + N*floor($T0/64)/4 + 4*(Mod($T0, 64)) : 4 : 1}) type(Register[M, N].of(f16))
+mul(lhs=read_M:0_N:1, rhs=read_M:0_N:1, index={M: $T1*BLOCK_M + $WG1*BLOCK_M : 1 : 1, N: $ARGN*N/4 + $WG0*N + N*floor($T0/64)/4 + 4*(Mod($T0, 64)) : 4 : 1}) type(Register[M, N].of(f16))
+mul(lhs=read_M:0_N:2, rhs=read_M:0_N:2, index={M: $T1*BLOCK_M + $WG1*BLOCK_M : 1 : 1, N: $ARGN*N/4 + $WG0*N + N*floor($T0/64)/4 + 4*(Mod($T0, 64)) : 4 : 1}) type(Register[M, N].of(f16))
+mul(lhs=read_M:0_N:3, rhs=read_M:0_N:3, index={M: $T1*BLOCK_M + $WG1*BLOCK_M : 1 : 1, N: $ARGN*N/4 + $WG0*N + N*floor($T0/64)/4 + 4*(Mod($T0, 64)) : 4 : 1}) type(Register[M, N].of(f16))
+mul(lhs=read_M:0_N:4, rhs=read_M:0_N:4, index={M: $T1*BLOCK_M + $WG1*BLOCK_M : 1 : 1, N: $ARGN*N/4 + $WG0*N + N*floor($T0/64)/4 + 4*(Mod($T0, 64)) : 4 : 1}) type(Register[M, N].of(f16))
+sum(arg=[mul_M:0_N:0, mul_M:0_N:1, mul_M:0_N:2, mul_M:0_N:3, mul_M:0_N:4], init=partial_red_M:0_N:0, dim=N, block=False, index={M: $T1*BLOCK_M + $WG1*BLOCK_M : 1 : 1}) type(Register[M].of(f16))
+output(return_vals=([sum_1_M:0_N:0],)) type(Register[M].of(f16))
+F
+
+=================================== FAILURES ===================================
+_____________________________________ test _____________________________________
+
+    @require_e2e
+    def test():
+        M = tkl.sym.M
+        N = tkl.sym.N
+        BLOCK_M = tkl.sym.BLOCK_M
+        BLOCK_N = tkl.sym.BLOCK_N
+        ELEMS_PER_THREAD = tkl.sym.ELEMS_PER_THREAD
+        ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
+        num_waves = 4
+        wave_size = 64
+        BLOCK_N = N // 1
+        tiling_factor = 4
+        ELEMS_PER_WAVE = N // num_waves
+        constraints: list[tkw.Constraint] = [
+            tkw.HardwareConstraint(
+                threads_per_wave=64,
+                vector_shapes={M: 1, N: ELEMS_PER_THREAD * wave_size},
+            )
+        ]
+        constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 1)]
+        constraints += [tkw.WaveConstraint(M, BLOCK_M)]
+        constraints += [tkw.WorkgroupConstraint(N, BLOCK_N, 0)]
+        constraints += [tkw.WaveConstraint(N, BLOCK_N / num_waves)]
+        constraints += [tkw.TilingConstraint(N, (BLOCK_N) / tiling_factor)]
+
+        @tkw.wave(constraints)
+        def test(
+            a: tkl.Memory[M, N, ADDRESS_SPACE, tkl.f16],
+            gamma: tkl.Memory[N, ADDRESS_SPACE, tkl.f16],
+            c: tkl.Memory[M,N, ADDRESS_SPACE, tkl.f16],
+        ):
+            length_embedding = tkl.Register[M, tkl.f16](EMB_SIZE)
+
+            init_red = tkl.Register[M, tkl.f16](0.0)
+
+
+            @tkw.iterate(N, init_args=[init_red])
+            def repeat(
+                partial_red: tkl.Register[M, tkl.f16],
+            ) -> tkl.Register[M, tkl.f16]:
+                lhs = tkw.read(a,elements_per_thread=ELEMS_PER_THREAD)
+                lhs_sq = lhs * lhs
+                partial_red = tkw.sum(lhs_sq, partial_red, dim=N)
+                return partial_red
+
+            result = repeat / length_embedding
+            rms = tkw.sqrt(result)
+            rms_broad=tkw.broadcast(rms,[M,N])
+
+            lhs2 = tkw.read(a,elements_per_thread=ELEMS_PER_THREAD)
+            a_scaled= lhs2/ rms_broad
+            # gamma_reg = tkw.read(gamma)
+            # gamma_broad = tkw.broadcast(gamma_reg, [M, N])
+            # output = a_scaled * gamma_broad
+
+            tkw.write(a_scaled, c)
+
+        shape = (1, 5120)
+        options = WaveCompileOptions(
+            subs={
+                M: shape[0],
+                N: shape[1],
+                BLOCK_M: 1,
+                EMB_SIZE: shape[1],
+                ELEMS_PER_THREAD: 4,
+                ADDRESS_SPACE: tkl.AddressSpace.GLOBAL_MEMORY.value,
+            },
+            canonicalize=True,
+            print_ir_after=["set_thread_dependent_index_from_reduce", "expand_graph"],
+            print_ir_before=["set_thread_dependent_index_from_reduce", "expand graph"],
+        )
+        options = set_default_run_config(options)
+>       test = wave_compile(options, test)
+
+tests/kernel/wave/rmsnorm_tiling_test.py:123:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+wave_lang/kernel/wave/compile.py:290: in wave_compile
+    ) = kernel._trace_and_get_kernel_signature(options)
+wave_lang/kernel/wave/wave.py:717: in _trace_and_get_kernel_signature
+    *self.compile_to_mlir(trace, context, module_op, options=options),
+wave_lang/kernel/wave/wave.py:495: in compile_to_mlir
+    emitter.emit(trace.get_root_graph())
+wave_lang/kernel/wave/codegen/emitter.py:123: in emit
+    self._emit_graph(
+wave_lang/kernel/wave/codegen/emitter.py:135: in _emit_graph
+    self._emit_function_call_node(node)
+wave_lang/kernel/wave/codegen/emitter.py:152: in _emit_function_call_node
+    handler(self, node)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+emitter = WaveEmitter(root_sig=<wave_lang.kernel.compiler.dispatch_codegen.DispatchEntrypoint object at 0x7f137957ec50>, trace=<... grid_type=Grid[1, ceiling(M/BLOCK_M)], ip=<iree.compiler._mlir_libs._mlir.ir.InsertionPoint object at 0x7f0b781b1520>)
+node = truediv_1_M:0_N:0
+
+    @handle_op(op)
+    def handle_generic_binary(emitter: WaveEmitter, node: fx.Node):
+        try:
+            lhs, rhs = node.args
+        except ValueError as e:
+            raise ValidationError("Malformed arguments") from e
+        lhs = cast_py_value(emitter, lhs).ir_value
+        rhs = cast_py_value(emitter, rhs).ir_value
+
+        # Handle special scalar/rank-0 cases where lhs/rhs may be
+        # Dtype, vector<Dtype>, or vector<1xDtype>.
+        arg_ranks = [get_rank(arg.type) for arg in (lhs, rhs)]
+        if (arg_ranks[0] != arg_ranks[1]) and max(arg_ranks) <= 1:
+            if arg_ranks[0] > arg_ranks[1]:
+                # Case where rank(lhs) > rank(rhs)
+                rhs = vector_d.broadcast(lhs.type, rhs)
+            else:
+                # Case where rank(rhs) > rank(lhs)
+                lhs = vector_d.broadcast(rhs.type, lhs)
+
+        if lhs.type != rhs.type:
+            op = get_custom(node)
+>           raise ValidationError(
+                f"Expected lhs and rhs to have same type for\n"
+                f"{op}\nGot\n"
+                f"lhs: {lhs.type} vs rhs: {rhs.type}\n"
+                f"{lhs=}\n"
+                f"{rhs=}\n"
+                f"lhs={get_custom(op.lhs)}\n"
+                f"rhs={get_custom(op.rhs)}"
+            )
+E           wave_lang.kernel.compiler.base.ValidationError: Expected lhs and rhs to have same type for
+E           truediv(lhs=read_M:0_N:0, rhs=broadcast_M:0_N:0, index={M: $T1*BLOCK_M + $WG1*BLOCK_M : 1 : 1, N: $WG0*N + N*floor($T0/64)/4 : 1 : 1}) type(Register[M, N].of(f16))
+E           Got
+E           lhs: vector<4xf16> vs rhs: vector<1xf16>
+E           lhs=<iree.compiler._mlir_libs._mlir.ir.OpResult object at 0x7f0b73e8ab70>
+E           rhs=<iree.compiler._mlir_libs._mlir.ir.OpResult object at 0x7f0b73e7a330>
+E           lhs=read(memory=a, elements_per_thread=ELEMS_PER_THREAD, mapping_dynamic_vals=(), index={M: $T1*BLOCK_M + $WG1*BLOCK_M : 1 : 1, N: $WG0*N + N*floor($T0/64)/4 : 1 : 1}) type(Register[M, N].of(f16))
+E           rhs=broadcast(arg=sqrt_M:0_N:0, target_shape=[M, N], index={M: $T1*BLOCK_M + $WG1*BLOCK_M : 1 : 1, N: $WG0*N + N*floor($T0/64)/4 : 1 : 1}) type(Register[M, N].of(f16))
+
+wave_lang/kernel/wave/codegen/handlers.py:582: ValidationError
+=========================== short test summary info ============================
+FAILED tests/kernel/wave/rmsnorm_tiling_test.py::test - wave_lang.kernel.comp...
+============================== 1 failed in 5.72s ===============================
