@@ -35,7 +35,7 @@ import torch.nn as nn
 @pytest.mark.parametrize(
     "shape",
     [
-        (1, 5120),
+        (128, 5120),
     ],
 )
 @require_e2e
