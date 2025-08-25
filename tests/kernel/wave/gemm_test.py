@@ -40,7 +40,8 @@ from wave_lang.kernel.wave.scheduling.schedule import SchedulingType
     "shape,dtype,dynamic_dims,mfma_variant",
     [
         #((1, 5120), torch.bfloat16, False, MMAType.DEFAULT),
-        ((64, 128, 511),torch.bfloat16, [False,False,False], MMAType.F32_16x16x16_F16 ), 
+        #((64, 128, 511),torch.bfloat16, [False,False,False], MMAType.F32_16x16x16_F16 ),
+        ((64, 128, 511),torch.bfloat16, [False,False,False], MMAType.F32_32x32x16_K8_F16 ),  
         # ((64, 1024, 511), torch.float16, (False, True), MMAType.MFMA_32x32), 
         # ((64, 128, 511), torch.float16, (False, True), MMAType.MFMA_32x32), 
     ],

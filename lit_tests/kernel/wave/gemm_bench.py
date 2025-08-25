@@ -197,8 +197,8 @@ def calculate_diff_gemm(M, N, K, dtype=torch.bfloat16):
     C = torch.empty((M, N), dtype=torch.float32, device="cuda")
 
     # ---- WAVE ----
-    wave_kernel = get_wave_gemm((M,N,K), dtype, [False,False,False],MMAType.F32_32x32x8_F16)  # <- your Wave GEMM builder
-    wave_kernel(A.clone(), B.clone(),C)
+    wave_kernel = get_wave_gemm((M,N,K), dtype, [False,False,False],MMAType.F32_32x32x16_K8_F16)  # <- your Wave GEMM builder
+    wave_kernel(A.clone(), B.clone(),C) 
 
     # ---- TRITON ----
     output_triton = triton_matmul_abt(A.clone(), B.clone())  
@@ -258,7 +258,7 @@ def bench(M, N, K, provider):
         )
     elif provider == "wave":
         # plug your compiled wave GEMM here; it should compute C in fp32
-        wave_gemm = get_wave_gemm( (M,N,K), dtype, [False,False,False],MMAType.F32_32x32x8_F16)
+        wave_gemm = get_wave_gemm( (M,N,K), dtype, [False,False,False],MMAType.F32_32x32x16_K8_F16)
         C = torch.empty((M, N), dtype=torch.float32, device="cuda")
         _ = wave_gemm(A, B, C)   # warmup; expect A(M,K), B(N,K), C(M,N)
         ms, min_ms, max_ms = triton.testing.do_bench(
