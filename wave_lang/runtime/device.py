@@ -550,10 +550,7 @@ def _device_import_torch_tensor_cuda_hip(
     # The None passed to tensor.__dlpack__ indicates we are doing no stream synchronization here.
     # We launch kernels through IREE runtime on the same stream as PyTorch. If using multiple
     # streams, the user is expected to properly manage stream synchronization.
-    try:
-        capsule = t.__dlpack__(None) 
-    except TypeError:
-        capsule = t.__dlpack__()
+    capsule = t.__dlpack__(stream=None)
     bv = device.hal_device.from_dlpack_capsule(capsule)
     return bv
 
