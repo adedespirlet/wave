@@ -2,6 +2,7 @@ from sympy import Max, Min, ceiling
 
 import wave_lang.kernel.lang as tkl
 import wave_lang.kernel.wave as tkw
+import torch
 from wave_lang.kernel.lang.global_symbols import *
 from wave_lang.kernel.wave.utils.general_utils import (
     get_default_scheduling_params,
@@ -19,6 +20,7 @@ def get_reordered_matmul(
     block_k_size: int,
     group_m_size: int,
     mfma_variant,
+    dtype: torch.dtype = torch.float16,
 ):
     # Input sizes
     M = tkl.sym.M
@@ -79,8 +81,8 @@ def get_reordered_matmul(
 
     @tkw.wave(constraints)
     def gemm(
-        a: tkl.Memory[M, K, ADDRESS_SPACE, tkl.f16],
-        b: tkl.Memory[N, K, ADDRESS_SPACE, tkl.f16],
+        a: tkl.Memory[M, K, ADDRESS_SPACE, dtype],
+        b: tkl.Memory[N, K, ADDRESS_SPACE, dtype],
         c: tkl.Memory[M, N, GLOBAL_ADDRESS_SPACE, tkl.f32],
     ):
         c_reg = tkl.Register[M, N, tkl.f32](0.0)
