@@ -182,7 +182,7 @@ def build_sorted_ids_and_expert_blocks(topk_ids: torch.Tensor, num_experts: int,
 def compare_once(M, N, K):
     topk = 2
     num_experts = 8
-    block_m, block_n, block_k = 64, 64, 32
+    block_m, block_n, block_k = 128, 128, 64
     dtype = torch.float16
     device = torch.device("cuda")
 
