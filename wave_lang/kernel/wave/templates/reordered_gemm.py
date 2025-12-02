@@ -21,6 +21,7 @@ def get_reordered_matmul(
     group_m_size: int,
     mfma_variant,
     dtype: torch.dtype = torch.float16,
+    dtype_output: torch.dtype = torch.float32,
 ):
     # Input sizes
     M = tkl.sym.M
@@ -83,7 +84,7 @@ def get_reordered_matmul(
     def gemm(
         a: tkl.Memory[M, K, ADDRESS_SPACE, dtype],
         b: tkl.Memory[N, K, ADDRESS_SPACE, dtype],
-        c: tkl.Memory[M, N, GLOBAL_ADDRESS_SPACE, tkl.f32],
+        c: tkl.Memory[M, N, GLOBAL_ADDRESS_SPACE, dtype_output],
     ):
         c_reg = tkl.Register[M, N, tkl.f32](0.0)
 
