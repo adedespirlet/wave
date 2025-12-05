@@ -277,8 +277,8 @@ def test_async_gemm_schedule(is_debug=False):
     The schedule uses async operations to overlap global-to-shared transfers with compute operations
     from different iterations.
     """
-    shape: tuple[int, int, int] = (128, 256, 1024)
-    mfma_variant: tkw.MMAType = tkw.MMAType.F32_16x16x16_F16
+    shape: tuple[int, int, int] = (256, 256, 232)
+    mfma_variant: tkw.MMAType = tkw.MMAType.F32_16x16x32_F16
 
     # Symbol definitions
     M = tkl.sym.M
@@ -452,8 +452,8 @@ def test_async_gemm_schedule(is_debug=False):
             M: M_val,
             N: N_val,
             K: K_val,
-            BLOCK_M: 128,
-            BLOCK_N: 256,
+            BLOCK_M: 64,
+            BLOCK_N: 32,
             BLOCK_K: 64,
             ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
             ADDRESS_SPACE_0: GLOBAL_ADDRESS_SPACE,
