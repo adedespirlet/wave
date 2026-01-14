@@ -801,6 +801,7 @@ def test_async_gemm_schedule_triple_buffering(is_debug=False):
     BLOCK_K = tkl.sym.BLOCK_K
     ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
     ADDRESS_SPACE_0 = tkl.sym.ADDRESS_SPACE_0
+    UNROLL_FACTOR = tkl.sym.UNROLL_FACTOR
 
     # Basic constraints needed for compilation
     constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
@@ -935,7 +936,7 @@ def test_async_gemm_schedule_triple_buffering(is_debug=False):
             ),
             tkw.cluster(
                 [
-                    tkw.MemoryCounterWait(load=independent_global_count),
+                    # tkw.MemoryCounterWait(load=independent_global_count),
                     shared_load_a_1,
                     shared_load_b_1,
                     tkw.SchedulingBarrier([]),
@@ -972,6 +973,7 @@ def test_async_gemm_schedule_triple_buffering(is_debug=False):
             BLOCK_K: 64,
             ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
             ADDRESS_SPACE_0: GLOBAL_ADDRESS_SPACE,
+            UNROLL_FACTOR: 6,
         },
         canonicalize=True,
         schedule=SchedulingType.MANUAL,
@@ -982,7 +984,16 @@ def test_async_gemm_schedule_triple_buffering(is_debug=False):
         specialize=True,
         # override_mlir=manual_triplebuffer,
     )
-
+    # Add postprocess transform to unroll the loop
+    options.postprocess = """
+    module attributes {transform.with_named_sequence} {
+        transform.named_sequence @__transform_main(%arg0: !transform.any_op {transform.readonly}) {
+            %0 = transform.structured.match ops{["scf.for"]} in %arg0 : (!transform.any_op) -> !transform.any_op
+            transform.loop.unroll %0 { factor = %%UNROLL_FACTOR%% } : !transform.any_op
+            transform.yield
+        }
+    }
+    """
     # Set runtime configuration for execution
     options = set_default_run_config(options)
 
