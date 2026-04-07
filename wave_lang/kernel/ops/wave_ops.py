@@ -1882,6 +1882,67 @@ class SchedulingGroupBarrier(CustomOp):
     sync_id: int
 
 
+class NodeCounter(int):
+    """An int-like counter whose value is resolved at the end of the pipeline.
+
+    Each instance stamps the supplied nodes with a **unique counter
+    tag** (e.g. ``_nc_7f3a…``).  When passes like
+    ``merge_contiguous_reads`` replace nodes, ``propagate_tag`` copies
+    the counter tag to the replacements, so the final count reflects
+    the actual number of surviving operations.
+
+    The resolution pass also filters by **pipeline stage** and
+    **unroll iteration** to ignore copies created by pipelining or
+    loop unrolling.
+
+    This correctly handles split node sets — each ``NodeCounter``
+    carries its own unique tag, so two halves of a partition are
+    counted independently.
+
+    Typical usage inside a wave schedule::
+
+        tkw.MemoryCounterWait(load=tkw.NodeCounter(loop_global_to_shared))
+
+    Works with split/partitioned node lists::
+
+        first, second = tkw.partition_by_dim(nodes, dim=M, num_partitions=2)
+        tkw.MemoryCounterWait(load=tkw.NodeCounter(first))
+        tkw.MemoryCounterWait(load=tkw.NodeCounter(second))
+    """
+
+    _counter_tag: str
+    _pipeline_stage: object  # PipelineStage enum value or None
+    _unroll_iteration: int | None
+
+    def __new__(cls, nodes: list):
+        instance = super().__new__(cls, len(nodes))
+        instance._counter_tag = f"_nc_{id(instance):x}"
+
+        # Stamp each node with the unique counter tag.
+        # Always create a NEW set to avoid mutating shared references
+        # (propagate_tag copies set objects by reference).
+        for node in nodes:
+            existing = getattr(node, "tag", None)
+            if existing is None:
+                node.tag = {instance._counter_tag}
+            elif isinstance(existing, str):
+                node.tag = {existing, instance._counter_tag}
+            else:
+                node.tag = existing | {instance._counter_tag}
+
+        # Extract pipeline stage — all nodes should be in the same stage
+        stages = {n.meta.get("pipeline_stage") for n in nodes}
+        stages.discard(None)
+        instance._pipeline_stage = stages.pop() if len(stages) == 1 else None
+
+        # Extract unroll iteration — nodes from the same iteration share this
+        iters = {getattr(n, "unroll_iteration", None) for n in nodes}
+        iters.discard(None)
+        instance._unroll_iteration = iters.pop() if len(iters) == 1 else None
+
+        return instance
+
+
 @define_op("memory_counter_wait")
 @dataclass
 class MemoryCounterWait(CustomOp):

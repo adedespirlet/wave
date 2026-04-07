@@ -82,6 +82,7 @@ from .region_canonicalization import (
     verify_canonical_region_captures,
     wrap_graph_passes_with_region_adapters,
 )
+from .resolve_deferred_counters import resolve_deferred_counters
 from .schedule_reordering import schedule_reordering
 from .scheduling.loop_reconstruction import guard_g2s_with_bounds_check
 from .scheduling.schedule import schedule_graph
@@ -646,6 +647,10 @@ def build_graph_passes(
             log=False,
             enforce_locations=options.enforce_locations,
         )
+    )
+
+    graph_passes.append(
+        partial(resolve_deferred_counters, trace, launchable.constraints),
     )
 
     raw_graph_passes = [raw_graph_pass(graph_pass) for graph_pass in graph_passes]

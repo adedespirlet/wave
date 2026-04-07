@@ -21,6 +21,7 @@ Requires use_global_to_shared=True and threads_per_wave=64.
 import wave_lang.kernel.lang as tkl
 import wave_lang.kernel.wave as tkw
 import wave_lang.kernel.wave.wave_schedule as wave_schedule
+from wave_lang.kernel.ops.wave_ops import NodeCounter
 
 
 def get_mxfp4_dbuf_schedule(use_stagger: bool = True):
@@ -173,7 +174,7 @@ def get_mxfp4_dbuf_schedule(use_stagger: bool = True):
             loop_bitcast_b_scale, dim=K, num_partitions=2
         )
 
-        independent_global_count = len(loop_global_to_shared)
+        independent_global_count = NodeCounter(loop_global_to_shared)
 
         # Build cluster 0: first K-partition loads + bitcasts + GatherToLDS
         cluster_0_ops = [
@@ -1162,7 +1163,7 @@ def get_mxfp4_dbuf_mixed_pingpong_schedule(use_stagger: bool = True):
 
         # Number of async gather_to_lds ops issued per loop iteration.
         # Used as the memory_counter_wait threshold placed after gather_to_lds.
-        independent_global_count = len(loop_global_to_shared)
+        independent_global_count = NodeCounter(loop_global_to_shared)
 
         # Build clusters
         # Cluster 0
@@ -1486,7 +1487,7 @@ def get_mxfp4_dbuf_mixed_pingpong_shuffle_schedule(use_stagger: bool = True):
 
         # Number of async gather_to_lds ops issued per loop iteration.
         # Used as the memory_counter_wait threshold placed after gather_to_lds.
-        independent_count = len(loop_global_to_shared)
+        independent_count = NodeCounter(loop_global_to_shared)
 
         # Build clusters
         # Cluster 0
@@ -1815,10 +1816,11 @@ def get_mxfp4_asymmetric_schedule(
             start_after_groups=[[], [], [1], [0]],
         )
 
-        loop_B_g2v_bs = len(loop_g2v_b) + (
-            len(loop_g2v_b_scale) // b_scale_shuffling_factor
-        )
-        loop_A_s2v_bs = len(loop_g2s_a) + len(loop_g2s_a_scale)
+        # loop_B_g2v_bs = len(loop_g2v_b) + (
+        #     len(loop_g2v_b_scale) // b_scale_shuffling_factor
+        # )
+        loop_B_g2v_bs = NodeCounter(loop_g2v_b + loop_g2v_b_scale)
+        loop_A_s2v_bs = NodeCounter(loop_g2s_a + loop_g2s_a_scale)
         clusters = [
             tkw.cluster(
                 [
