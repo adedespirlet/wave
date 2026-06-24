@@ -34,6 +34,11 @@ from wave_lang.kernel.wave.schedules import (
     get_mxfp4_dbuf_pingpong_schedule_Bshuffled_lds,
     get_mxfp4_dbuf_schedule,
 )
+from wave_lang.kernel.wave.schedules.gemm_mxfp4_double_buffer import (
+    get_mxfp4_dbuf_pingpong_schedule_Bshuffled_lds_opt0,
+    get_mxfp4_dbuf_pingpong_schedule_Bshuffled_lds_opt1,
+    get_mxfp4_dbuf_pingpong_schedule_Bshuffled_lds_opt2,
+)
 from wave_lang.kernel.wave.templates import (
     get_tagged_mxfp4_gemm,
     get_tagged_mxfp4_gemm_preshuffle_b,
@@ -212,23 +217,51 @@ def test_dbuf_8wave_pingpong_mxfp_gemm(
             shape,
             block,
             wave_shape=wave_shape,
+            b_address_space=SHARED_ADDRESS_SPACE,
             output_dtype=tkl.bf16,
         )
     options.specialize = True
     options.use_buffer_ops = True
     options.minimize_shared_allocs = True
     options.linearize_shared_access = True
+    options.wave_runtime = True
 
     if dynamic:
         options.dynamic_symbols = [tkl.sym.M, tkl.sym.N, tkl.sym.K]
         for sym in options.dynamic_symbols:
             del options.subs[sym]
 
-    schedule = get_mxfp4_dbuf_pingpong_schedule(use_stagger=True, shape=shape)
+    #schedule = get_mxfp4_dbuf_pingpong_schedule(use_stagger=True, shape=shape)
+    schedule = get_mxfp4_dbuf_pingpong_schedule_Bshuffled_lds(
+        use_stagger=True, shape=shape, block=block
+    )
+
+    # schedule=get_mxfp4_dbuf_pingpong_schedule_Bshuffled_lds_opt0(
+    #     use_stagger=False, shape=shape, block=block
+    # )
+
+    # schedule=get_mxfp4_dbuf_pingpong_schedule_Bshuffled_lds_opt1(
+    #     use_stagger=True, shape=shape, block=block
+    # )
+
+    # schedule=get_mxfp4_dbuf_pingpong_schedule_Bshuffled_lds_opt2(
+    #     use_stagger=True, shape=shape, block=block
+    # )
+
+    options.postprocess = """
+    module attributes {transform.with_named_sequence} {
+        transform.named_sequence @__transform_main(%arg0: !transform.any_op {transform.readonly}) {
+            %0 = transform.structured.match ops{["scf.for"]} in %arg0 : (!transform.any_op) -> !transform.any_op
+            transform.loop.unroll %0 { factor = 2 } : !transform.any_op
+            transform.yield
+        }
+    }
+    """
 
     options.print_ir_after = "all" if is_debug else []
     options = set_default_run_config(options)
     gemm = wave_compile(options, gemm, schedule)
+    print(gemm.asm)
 
     _run_mxfp_gemm_preshuffle(
         gemm, shape, only_scale=True, output_dtype=torch.bfloat16
