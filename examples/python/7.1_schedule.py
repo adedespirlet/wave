@@ -201,11 +201,18 @@ def test_dbuf_8wave_pingpong_mxfp_gemm(
     wave_shape = _get_8wave_shape_from_block(block)
     if splitk:
         gemm, options = get_tagged_splitk_mxfp4_gemm_preshuffle_scales(
-            shape, num_splits=splitk, block_shape=block, wave_shape=wave_shape
+            shape,
+            num_splits=splitk,
+            block_shape=block,
+            wave_shape=wave_shape,
+            output_type=tkl.bf16,
         )
     else:
         gemm, options = get_tagged_mxfp4_gemm_preshuffle_scales(
-            shape, block, wave_shape=wave_shape
+            shape,
+            block,
+            wave_shape=wave_shape,
+            output_dtype=tkl.bf16,
         )
     options.specialize = True
     options.use_buffer_ops = True
@@ -223,7 +230,9 @@ def test_dbuf_8wave_pingpong_mxfp_gemm(
     options = set_default_run_config(options)
     gemm = wave_compile(options, gemm, schedule)
 
-    _run_mxfp_gemm_preshuffle(gemm, shape, only_scale=True)
+    _run_mxfp_gemm_preshuffle(
+        gemm, shape, only_scale=True, output_dtype=torch.bfloat16
+    )
     mode = "dynamic" if dynamic else "static"
     sk = f", split-K({splitk})" if splitk else ""
     print(

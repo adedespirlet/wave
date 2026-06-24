@@ -337,6 +337,7 @@ def get_tagged_mxfp4_gemm_preshuffle_scales(
     wave_shape: tuple[int, int] = (2, 2),
     mfma_variant: ScaledMMAType = ScaledMMAType.F32_16x16x128_F8F6F4,
     a_address_space: tkl.AddressSpace = SHARED_ADDRESS_SPACE,
+    output_dtype=tkl.f32,
 ):
     """Return a tagged MXFP4 scaled GEMM kernel with preshuffled B and B_scale.
 
@@ -362,6 +363,7 @@ def get_tagged_mxfp4_gemm_preshuffle_scales(
         mfma_variant,
         a_address_space,
         b_preshuffled=False,
+        output_dtype=output_dtype,
     )
 
 
