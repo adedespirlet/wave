@@ -675,8 +675,11 @@ def _create_vec_read_write(
     ):
         symbolic_shape = memory.distributed_shape
 
-    # only use buffer ops on global memory
-    is_global_mem = mem.type.memory_space is None
+    # Only use buffer ops on global memory.
+    # Do not rely on memref memory_space being None, as global buffers may
+    # carry an explicit/default memory-space attribute that still prints as a
+    # plain memref type.
+    is_global_mem = memory.type.address_space != SHARED_ADDRESS_SPACE
     buffer_ops_enabled = emitter.options.use_buffer_ops and is_global_mem
     is_shared_mem = memory.type.address_space == SHARED_ADDRESS_SPACE and node_index
     linearize_shared_mem = is_shared_mem and emitter.options.linearize_shared_access
@@ -1086,11 +1089,14 @@ def _handle_read_linear_index(
     ):
         subs_map = add_emitter_subs(emitter, dynamic_vals_map_start)
         sym_strides = _sym_strides_for_flat_memref(kb_src, input_shape)
-        # LINEAR_INDEX global reads default to maskedload (no buffer ops)
-        # so numerics match across IREE and wave runtime.  When
-        # eliminate_epilogue is active, OOB prefetch reads need
+        # LINEAR_INDEX global reads historically defaulted to maskedload
+        # (no buffer ops) so numerics match across IREE and wave runtime.
+        # Honor explicit use_buffer_ops requests, and still force buffer
+        # ops when eliminate_epilogue is active so OOB prefetch reads use
         # hardware bounds checking to avoid faults.
-        linear_buffer_ops = emitter.options.eliminate_epilogue
+        linear_buffer_ops = (
+            emitter.options.use_buffer_ops or emitter.options.eliminate_epilogue
+        )
         lin_src = _linear_read_linearize_memref_maybe_hoisted(
             emitter,
             kb_src,
@@ -1177,7 +1183,7 @@ def handle_read(emitter: WaveEmitter, node: fx.Node):
     )
     dynamic_vals_map_start = _build_dyn_vals_map(mapping, dyn_vals)
 
-    is_global_mem = kb_src.type.memory_space is None
+    is_global_mem = get_custom(memory).type.address_space != SHARED_ADDRESS_SPACE
     buffer_ops_enabled = emitter.options.use_buffer_ops and is_global_mem
 
     # --- LINEAR_INDEX path (flattened reads) ---

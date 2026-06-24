@@ -103,7 +103,8 @@ def _run_mxfp_gemm_preshuffle(
     x_scales_ps, w_scales_ps = x_scales_ps.cuda(), w_scales_ps.cuda()
     out = torch.zeros(x.shape[0], w_t_ps.shape[0], dtype=output_dtype).cuda()
 
-    gemm(x, x_scales_ps, w_t_ps, w_scales_ps, out)
+    for _ in range(100):
+        gemm(x, x_scales_ps, w_t_ps, w_scales_ps, out)
 
     tol_kwargs = {}
     if atol is not None:
@@ -312,6 +313,7 @@ def test_dbuf_8wave_pingpong_mxfp_gemm_Bshuffle_lds(
     """
     options = set_default_run_config(options)
     gemm = wave_compile(options, gemm, schedule)
+    print(gemm.asm)
 
     _run_mxfp_gemm_preshuffle(gemm, shape, all=True, output_dtype=torch.bfloat16)
     mode = "dynamic" if dynamic else "static"
