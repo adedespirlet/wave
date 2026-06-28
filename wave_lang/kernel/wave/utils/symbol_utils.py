@@ -328,7 +328,7 @@ def _custom_simplify_once(expr: sympy.Expr) -> sympy.Expr:
             terms.append(arg)
         if c is None or mult is None or c >= mult:
             return None
-        return (sum(terms) % q) + c
+        return sympy.Mod(sum(terms), q, evaluate=False) + c
 
     def transform_floor(expr):
         if not isinstance(expr, sympy.floor):

@@ -15,6 +15,7 @@ Usage:
     python 7.1_schedule.py --list_tests
 """
 
+import os
 import torch
 from utils import list_tests, parse_args, run_test
 import pathlib
@@ -35,6 +36,7 @@ from wave_lang.kernel.wave.schedules import (
     get_mxfp4_dbuf_schedule,
 )
 from wave_lang.kernel.wave.schedules.gemm_mxfp4_double_buffer import (
+    get_mxfp4_dbuf_pingpong_schedule_Bshuffled_lds_opt_opt00,
     get_mxfp4_dbuf_pingpong_schedule_Bshuffled_lds_opt0,
     get_mxfp4_dbuf_pingpong_schedule_Bshuffled_lds_opt1,
     get_mxfp4_dbuf_pingpong_schedule_Bshuffled_lds_opt2,
@@ -187,9 +189,69 @@ def test_dbuf_4wave_mxfp_gemm(
     print(f"MXFP GEMM double-buffer 4-wave{sk} test passed!")
 
 
+
+def test_baseline_8wave_pingpong_mxfp_gemm(
+    is_debug=False,
+    shape=(2048, 2048, 8192),
+    block=(256, 256, 256),
+    dynamic=False,
+    splitk=None,
+):
+    """Double-buffered MXFP4 GEMM, 8 waves, ping-pong with stagger.
+    A&B scales are preshuffled and read from global memory directly to VGPRs.
+    A and B are read from global memory directly to LDS.
+
+    Note: for dynamic mode, keep block MxN at or below 128x256 or 256x128
+    to avoid exceeding shared-memory limits.
+    """
+    if splitk and block == (256, 256, 256):
+        block = (128, 256, 256)
+    wave_shape = _get_8wave_shape_from_block(block)
+    if splitk:
+        gemm, options = get_tagged_splitk_mxfp4_gemm_preshuffle_scales(
+            shape,
+            num_splits=splitk,
+            block_shape=block,
+            wave_shape=wave_shape,
+            output_type=tkl.bf16,
+        )
+    else:
+        gemm, options = get_tagged_mxfp4_gemm_preshuffle_scales(
+            shape,
+            block,
+            wave_shape=wave_shape,
+            b_address_space=SHARED_ADDRESS_SPACE,
+            output_dtype=tkl.bf16,
+        )
+    options.specialize = False
+    options.use_buffer_ops = True
+    options.minimize_shared_allocs = True
+    options.linearize_shared_access = True
+    options.wave_runtime = True
+    options.enable_swizzle = True
+
+    schedule = get_mxfp4_dbuf_pingpong_schedule_Bshuffled_lds_opt_opt00(
+        use_stagger=False, shape=shape, block=block
+    )
+
+    options.print_ir_after = "all" if is_debug else []
+    options = set_default_run_config(options)
+    gemm = wave_compile(options, gemm, schedule)
+    print(gemm.asm)
+
+    _run_mxfp_gemm_preshuffle(
+        gemm, shape, only_scale=True, output_dtype=torch.bfloat16
+    )
+    mode = "dynamic" if dynamic else "static"
+    sk = f", split-K({splitk})" if splitk else ""
+    print(
+        f"MXFP GEMM basline 8-wave with scale shuffling ({mode}{sk}) test passed!"
+    )
+
+
 def test_dbuf_8wave_pingpong_mxfp_gemm(
     is_debug=False,
-    shape=(1024, 1024, 8192),
+    shape=(2048, 2048, 1024),
     block=(256, 256, 256),
     dynamic=False,
     splitk=None,
@@ -225,38 +287,66 @@ def test_dbuf_8wave_pingpong_mxfp_gemm(
     options.minimize_shared_allocs = True
     options.linearize_shared_access = True
     options.wave_runtime = True
-
+    options.enable_swizzle= True
+    if os.environ.get("WAVE_VECTORIZED_STORE", "0") not in ("0", "false", "False"):
+        _K = shape[2]
+        _mlir_map = {
+            1024: "mxfp4_epilogue_opt_256x256_K1024.mlir",
+            2048: "mxfp4_epilogue_opt_256x256_K2048.mlir",
+            4096: "mxfp4_epilogue_opt_256x256_K4096.mlir",
+            8192: "mxfp4_epilogue_opt_256x256x256.mlir",
+        }
+        _mlir_file = _mlir_map.get(_K)
+        if _mlir_file is None:
+            raise ValueError(
+                f"WAVE_VECTORIZED_STORE: no hand-optimised MLIR for K={_K}. "
+                f"Available K values: {list(_mlir_map.keys())}"
+            )
+        options.override_mlir = (
+            pathlib.Path(__file__).parent / "mlir" / _mlir_file
+        ).read_text()
     if dynamic:
         options.dynamic_symbols = [tkl.sym.M, tkl.sym.N, tkl.sym.K]
         for sym in options.dynamic_symbols:
             del options.subs[sym]
 
-    #schedule = get_mxfp4_dbuf_pingpong_schedule(use_stagger=True, shape=shape)
-    schedule = get_mxfp4_dbuf_pingpong_schedule_Bshuffled_lds(
-        use_stagger=True, shape=shape, block=block
+    # Variant is controlled via env var to make A/B perf sweeps reproducible:
+    #   WAVE_MXFP4_VARIANT=opt00|opt0|opt1|opt2
+    # Default keeps current behavior.
+    variant = os.environ.get("WAVE_MXFP4_VARIANT", "opt00")
+    if variant == "opt0":
+        schedule = get_mxfp4_dbuf_pingpong_schedule_Bshuffled_lds_opt0(
+            use_stagger=False, shape=shape, block=block
+        )
+    elif variant == "opt1":
+        schedule = get_mxfp4_dbuf_pingpong_schedule_Bshuffled_lds_opt1(
+            use_stagger=True, shape=shape, block=block
+        )
+    elif variant == "opt2":
+        schedule = get_mxfp4_dbuf_pingpong_schedule_Bshuffled_lds_opt2(
+            use_stagger=True, shape=shape, block=block
+        )
+    else:
+        schedule = get_mxfp4_dbuf_pingpong_schedule_Bshuffled_lds_opt_opt00(
+            use_stagger=False, shape=shape, block=block
+        )
+
+    # Keep original unroll behavior as default; allow explicit disable for ablation.
+    enable_unroll = os.environ.get("WAVE_ENABLE_UNROLL", "1") not in (
+        "0",
+        "false",
+        "False",
     )
-
-    # schedule=get_mxfp4_dbuf_pingpong_schedule_Bshuffled_lds_opt0(
-    #     use_stagger=False, shape=shape, block=block
-    # )
-
-    # schedule=get_mxfp4_dbuf_pingpong_schedule_Bshuffled_lds_opt1(
-    #     use_stagger=True, shape=shape, block=block
-    # )
-
-    # schedule=get_mxfp4_dbuf_pingpong_schedule_Bshuffled_lds_opt2(
-    #     use_stagger=True, shape=shape, block=block
-    # )
-
-    options.postprocess = """
-    module attributes {transform.with_named_sequence} {
-        transform.named_sequence @__transform_main(%arg0: !transform.any_op {transform.readonly}) {
-            %0 = transform.structured.match ops{["scf.for"]} in %arg0 : (!transform.any_op) -> !transform.any_op
-            transform.loop.unroll %0 { factor = 2 } : !transform.any_op
-            transform.yield
+    if enable_unroll:
+        options.postprocess = """
+        module attributes {transform.with_named_sequence} {
+            transform.named_sequence @__transform_main(%arg0: !transform.any_op {transform.readonly}) {
+                %0 = transform.structured.match ops{["scf.for"]} in %arg0 : (!transform.any_op) -> !transform.any_op
+                transform.loop.unroll %0 { factor = 2 } : !transform.any_op
+                transform.yield
+            }
         }
-    }
-    """
+        """
 
     options.print_ir_after = "all" if is_debug else []
     options = set_default_run_config(options)
@@ -276,7 +366,7 @@ def test_dbuf_8wave_pingpong_mxfp_gemm(
 def test_dbuf_8wave_pingpong_mxfp_gemm_Bshuffle(
     is_debug=False,
     shape=(1024, 1024, 8192),
-    block=(256, 256, 256),
+    block=(256, 192, 256),
     dynamic=False,
     splitk=None,
 ):
@@ -316,7 +406,7 @@ def test_dbuf_8wave_pingpong_mxfp_gemm_Bshuffle(
 
 
 def test_dbuf_8wave_pingpong_mxfp_gemm_Bshuffle_lds(
-    is_debug=False, shape=(1024, 1024, 8192), block=(256, 256, 256), dynamic=False
+    is_debug=False, shape=(1024, 1024, 1024), block=(256, 256, 256), dynamic=False
 ):
     """Double-buffered MXFP4 GEMM, 8 waves, ping-pong with stagger.
     A&B scales are preshuffled and read from global memory directly to VGPRs.
@@ -337,6 +427,7 @@ def test_dbuf_8wave_pingpong_mxfp_gemm_Bshuffle_lds(
     options.minimize_shared_allocs = True
     options.linearize_shared_access = True
     options.wave_runtime = True
+    
     if dynamic:
         options.dynamic_symbols = [tkl.sym.M, tkl.sym.N, tkl.sym.K]
         for sym in options.dynamic_symbols:
@@ -344,15 +435,15 @@ def test_dbuf_8wave_pingpong_mxfp_gemm_Bshuffle_lds(
     schedule = get_mxfp4_dbuf_pingpong_schedule_Bshuffled_lds(
         use_stagger=True, shape=shape, block=block
     )
-    options.postprocess = """
-    module attributes {transform.with_named_sequence} {
-        transform.named_sequence @__transform_main(%arg0: !transform.any_op {transform.readonly}) {
-            %0 = transform.structured.match ops{["scf.for"]} in %arg0 : (!transform.any_op) -> !transform.any_op
-            transform.loop.unroll %0 { factor = 2 } : !transform.any_op
-            transform.yield
-        }
-    }
-    """
+    # options.postprocess = """
+    # module attributes {transform.with_named_sequence} {
+    #     transform.named_sequence @__transform_main(%arg0: !transform.any_op {transform.readonly}) {
+    #         %0 = transform.structured.match ops{["scf.for"]} in %arg0 : (!transform.any_op) -> !transform.any_op
+    #         transform.loop.unroll %0 { factor = 2 } : !transform.any_op
+    #         transform.yield
+    #     }
+    # }
+    # """
     options = set_default_run_config(options)
     gemm = wave_compile(options, gemm, schedule)
     print(gemm.asm)
@@ -365,7 +456,7 @@ def test_dbuf_8wave_pingpong_mxfp_gemm_Bshuffle_lds(
 
 
 def test_dbuf_8wave_pingpong_mxfp_gemm_Bshuffle_lds_optimized_epilogue(
-    is_debug=False, shape=(1024, 1920, 8192), block=(256, 192, 256), dynamic=True
+    is_debug=False, shape=(2048, 2048, 8192), block=(256, 256, 256), dynamic=False
 ):
     """Double-buffered MXFP4 GEMM, 8 waves, ping-pong with stagger.
     A&B scales are preshuffled and read from global memory directly to VGPRs.
@@ -374,10 +465,19 @@ def test_dbuf_8wave_pingpong_mxfp_gemm_Bshuffle_lds_optimized_epilogue(
     A handwritten dynamic MLIR kernel is used which uses an optimized epilogue that uses swizzle and dword stores to global memory (instead of u shorts).
     """
 
-    # TODO: implement a pass that automatically emits the optimized epilogue
-    # storing logic for this MXFP4 kernel.
-    mlir_256x192 = (
-        pathlib.Path(__file__).parent / "mlir" / "mxfp4_epilogue_opt_256x192x256.mlir"
+    # This test is wired for the 256x256x256 tile-specific optimized epilogue.
+    if block != (256, 256, 256):
+        raise ValueError(
+            "optimized_epilogue test currently supports only block=(256, 256, 256)"
+        )
+
+    # For quick experiments you can paste an inline override here:
+    # xx = """<full IR module>"""
+    # options.override_mlir = xx
+    xx = (
+        pathlib.Path(__file__).parent
+        / "mlir"
+        / "mxfp4_epilogue_opt2_256x256x256_xor_candidate.mlir"
     ).read_text()
     wave_shape = _get_8wave_shape_from_block(block)
     gemm, options = get_tagged_mxfp4_gemm_preshuffle_scales_and_B(
@@ -392,7 +492,7 @@ def test_dbuf_8wave_pingpong_mxfp_gemm_Bshuffle_lds_optimized_epilogue(
     options.minimize_shared_allocs = True
     options.linearize_shared_access = True
     options.wave_runtime = True
-    options.override_mlir = mlir_256x192
+    options.override_mlir = xx
     if dynamic:
         options.dynamic_symbols = [tkl.sym.M, tkl.sym.N, tkl.sym.K]
         for sym in options.dynamic_symbols:
