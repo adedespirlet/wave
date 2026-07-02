@@ -340,9 +340,9 @@ def get_tagged_mxfp4_gemm_preshuffle_scales(
     b_address_space: tkl.AddressSpace | None = None,
     output_dtype=tkl.f32,
 ):
-    """Return a tagged MXFP4 scaled GEMM kernel with preshuffled B and B_scale.
+    """Return a tagged MXFP4 scaled GEMM kernel with preshuffled scales only.
 
-    A and B are loaded from global to shared.
+    A and B are loaded from global to shared (B is NOT preshuffled).
     A_scales and B_scales are read from global memory using an e8m0 scale preshuffle mapping and directly stored to VGPRs.
 
     All ops are tagged for use with MXFP4 schedule functions.
@@ -353,6 +353,8 @@ def get_tagged_mxfp4_gemm_preshuffle_scales(
         wave_shape: (WAVE_M, WAVE_N) waves per workgroup.
         mfma_variant: Scaled MMA instruction type.
         a_address_space: Address space for A.
+        b_address_space: Address space for B (defaults to shared).
+        output_dtype: Output element type (default f32).
 
     Returns:
         (kernel_function, WaveCompileOptions)

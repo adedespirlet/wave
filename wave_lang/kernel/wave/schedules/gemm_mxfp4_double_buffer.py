@@ -3025,3 +3025,736 @@ def get_mxfp4_asymmetric_schedule(
         )
 
     return mxfp4_dbuf_schedule
+
+
+def get_mxfp4_dbuf_pingpong_schedule_Bshuffled_lds_opt_opt00(
+    use_stagger: bool = False, shape: tuple = None, block: tuple = None
+):
+    """Alias for the base Bshuffled_lds schedule (pre-optimization baseline)."""
+    return get_mxfp4_dbuf_pingpong_schedule_Bshuffled_lds(
+        use_stagger=use_stagger, shape=shape, block=block
+    )
+
+
+def get_mxfp4_dbuf_pingpong_schedule_Bshuffled_lds_opt0(
+    use_stagger: bool = True, shape: tuple = None, block: tuple = None
+):
+    """ Only software pipelining and double buffering
+    
+    Return a double-buffered MXFP4 schedule for wave_compile().
+    Same as get_mxfp4_dbuf_pingpong_schedule_Bshuffled(), but B data is read
+    from global memory to LDS.
+
+    Args:
+        use_stagger: Enable wave staggering + WorkgroupBarrier in cluster 0.
+            Recommended for 8-wave configs; disable for 4-wave.
+        shape: Tuple of (M, N, K) dimensions. If provided and bigger than
+            (1024, 1024, 1024), an extra WorkgroupBarrier will be added
+            after the first SchedulingBarrier in cluster 0.
+    """
+    K = tkl.sym.K
+
+    @wave_schedule.wave_schedule()
+    def mxfp4_dbuf_schedule():
+        k_loop = tkw.get_node_by_tag("k_loop")
+
+        all_read_a = tkw.get_node_by_tag("read_a")
+        global_to_shared_a = tkw.filter_nodes(all_read_a, node_type=tkw.GatherToLDS)
+        shared_load_a = tkw.filter_nodes(all_read_a, node_type=tkw.Read)
+
+        all_read_a_scale = tkw.get_node_by_tag("read_a_scale")
+
+        all_read_b = tkw.get_node_by_tag("read_b")
+        global_to_shared_b = tkw.filter_nodes(all_read_b, node_type=tkw.GatherToLDS)
+        shared_load_b = tkw.filter_nodes(all_read_b, node_type=tkw.Read)
+
+        all_read_b_scale = tkw.get_node_by_tag("read_b_scale")
+        read_b_scale = tkw.filter_nodes(all_read_b_scale, node_type=tkw.Read)
+
+        bitcast_a = tkw.get_node_by_tag("bitcast_a")
+        bitcast_a_scale = tkw.get_node_by_tag("bitcast_a_scale")
+        bitcast_b = tkw.get_node_by_tag("bitcast_b")
+        bitcast_b_scale = tkw.get_node_by_tag("bitcast_b_scale")
+
+        scaled_mma = tkw.get_node_by_tag("scaled_mma")
+
+        pipeline_loop = tkw.pipeline(k_loop)
+
+        with pipeline_loop as pl:
+            pl.set_stage(
+                [
+                    (
+                        global_to_shared_a,
+                        global_to_shared_b,
+                        all_read_a_scale,
+                        all_read_b_scale,
+                    ),
+                    (),
+                    (),
+                ],
+            )
+            pl.set_stage(
+                [
+                    (shared_load_a, shared_load_b),
+                    (bitcast_a, bitcast_a_scale, bitcast_b, bitcast_b_scale),
+                    (scaled_mma,),
+                ],
+            )
+
+        loop_global_to_shared = tkw.filter_nodes(
+            global_to_shared_a, subgraph=pipeline_loop.KERNEL
+        ) + tkw.filter_nodes(global_to_shared_b, subgraph=pipeline_loop.KERNEL)
+
+        loop_shared_load_a = tkw.filter_nodes(
+            shared_load_a, subgraph=pipeline_loop.KERNEL
+        )
+        loop_shared_load_b = tkw.filter_nodes(
+            shared_load_b, subgraph=pipeline_loop.KERNEL
+        )
+        loop_all_read_a_scale = tkw.filter_nodes(
+            all_read_a_scale, subgraph=pipeline_loop.KERNEL
+        )
+        loop_all_read_b_scale = tkw.filter_nodes(
+            all_read_b_scale, subgraph=pipeline_loop.KERNEL
+        )
+        loop_bitcast_a = tkw.filter_nodes(bitcast_a, subgraph=pipeline_loop.KERNEL)
+        loop_bitcast_a_scale = tkw.filter_nodes(
+            bitcast_a_scale, subgraph=pipeline_loop.KERNEL
+        )
+        loop_bitcast_b = tkw.filter_nodes(bitcast_b, subgraph=pipeline_loop.KERNEL)
+        loop_bitcast_b_scale = tkw.filter_nodes(
+            bitcast_b_scale, subgraph=pipeline_loop.KERNEL
+        )
+        loop_scaled_mma = tkw.filter_nodes(scaled_mma, subgraph=pipeline_loop.KERNEL)
+
+        loop_scaled_mma_0, loop_scaled_mma_1 = tkw.partition_by_dim(
+            loop_scaled_mma, dim=K, num_partitions=2
+        )
+        loop_shared_load_a_0, loop_shared_load_a_1 = tkw.partition_by_dim(
+            loop_shared_load_a, dim=K, num_partitions=2
+        )
+        loop_shared_load_b_0, loop_shared_load_b_1 = tkw.partition_by_dim(
+            loop_shared_load_b, dim=K, num_partitions=2
+        )
+        loop_bitcast_a_0, loop_bitcast_a_1 = tkw.partition_by_dim(
+            loop_bitcast_a, dim=K, num_partitions=2
+        )
+        loop_bitcast_b_0, loop_bitcast_b_1 = tkw.partition_by_dim(
+            loop_bitcast_b, dim=K, num_partitions=2
+        )
+
+        cluster_0_ops = [
+            tkw.SchedulingBarrier([]),
+            tkw.MemoryCounterWait(load=0),
+            tkw.WorkgroupBarrier(),
+        ]
+        cluster_0_ops.extend(
+            [
+                loop_global_to_shared,
+                tkw.SchedulingBarrier([]),
+                loop_shared_load_a_0,
+                loop_shared_load_b_0,
+                loop_bitcast_a_0,
+                loop_bitcast_a_scale,
+                loop_bitcast_b_0,
+                loop_bitcast_b_scale,
+                loop_all_read_a_scale,
+                loop_all_read_b_scale,
+                tkw.SchedulingBarrier([]),
+            ]
+        )
+        if use_stagger:
+            cluster_0_ops.extend(
+                [
+                    tkw.WorkgroupBarrier(),
+                    tkw.SchedulingBarrier([]),
+                ]
+            )
+
+        clusters = [
+            tkw.cluster(cluster_0_ops),
+            tkw.cluster(
+                [
+                    tkw.SetWavePrio(1),
+                    loop_scaled_mma_0,
+                    tkw.SetWavePrio(0),
+                ],
+            ),
+            tkw.cluster(
+                [
+                    tkw.SchedulingBarrier([]),
+                    loop_shared_load_a_1,
+                    loop_shared_load_b_1,
+                    loop_bitcast_a_1,
+                    loop_bitcast_b_1,
+                    tkw.SchedulingBarrier([]),
+                ],
+            ),
+            tkw.cluster(
+                [
+                    tkw.SetWavePrio(1),
+                    loop_scaled_mma_1,
+                    tkw.SetWavePrio(0),
+                    tkw.SchedulingBarrier([]),
+                ],
+            ),
+        ]
+        tkw.insert_before(pipeline_loop.KERNEL, tkw.MemoryCounterWait(load=0))
+        tkw.insert_before(pipeline_loop.KERNEL, tkw.WorkgroupBarrier())
+        tkw.insert_after(pipeline_loop.KERNEL, tkw.SharedMemoryBarrier())
+        tkw.reorder_graph(pipeline_loop.KERNEL, clusters)
+
+        if use_stagger:
+            tkw.stagger(pipeline_loop.KERNEL)
+
+    return mxfp4_dbuf_schedule
+
+
+def get_mxfp4_dbuf_pingpong_schedule_Bshuffled_lds_opt1(
+    use_stagger: bool = True, shape: tuple = None, block: tuple = None
+):
+    """Stagger with double barrier + double buffer."""
+    K = tkl.sym.K
+
+    @wave_schedule.wave_schedule()
+    def mxfp4_dbuf_schedule():
+        k_loop = tkw.get_node_by_tag("k_loop")
+
+        all_read_a = tkw.get_node_by_tag("read_a")
+        global_to_shared_a = tkw.filter_nodes(all_read_a, node_type=tkw.GatherToLDS)
+        shared_load_a = tkw.filter_nodes(all_read_a, node_type=tkw.Read)
+
+        all_read_a_scale = tkw.get_node_by_tag("read_a_scale")
+
+        all_read_b = tkw.get_node_by_tag("read_b")
+        global_to_shared_b = tkw.filter_nodes(all_read_b, node_type=tkw.GatherToLDS)
+        shared_load_b = tkw.filter_nodes(all_read_b, node_type=tkw.Read)
+
+        all_read_b_scale = tkw.get_node_by_tag("read_b_scale")
+        read_b_scale = tkw.filter_nodes(all_read_b_scale, node_type=tkw.Read)
+
+        bitcast_a = tkw.get_node_by_tag("bitcast_a")
+        bitcast_a_scale = tkw.get_node_by_tag("bitcast_a_scale")
+        bitcast_b = tkw.get_node_by_tag("bitcast_b")
+        bitcast_b_scale = tkw.get_node_by_tag("bitcast_b_scale")
+
+        scaled_mma = tkw.get_node_by_tag("scaled_mma")
+
+        pipeline_loop = tkw.pipeline(k_loop)
+
+        with pipeline_loop as pl:
+            pl.set_stage(
+                [
+                    (
+                        global_to_shared_a,
+                        global_to_shared_b,
+                        all_read_a_scale,
+                        all_read_b_scale,
+                    ),
+                    (),
+                    (),
+                ],
+            )
+            pl.set_stage(
+                [
+                    (shared_load_a, shared_load_b),
+                    (bitcast_a, bitcast_a_scale, bitcast_b, bitcast_b_scale),
+                    (scaled_mma,),
+                ],
+            )
+
+        loop_global_to_shared = tkw.filter_nodes(
+            global_to_shared_a, subgraph=pipeline_loop.KERNEL
+        ) + tkw.filter_nodes(global_to_shared_b, subgraph=pipeline_loop.KERNEL)
+
+        loop_shared_load_a = tkw.filter_nodes(
+            shared_load_a, subgraph=pipeline_loop.KERNEL
+        )
+        loop_shared_load_b = tkw.filter_nodes(
+            shared_load_b, subgraph=pipeline_loop.KERNEL
+        )
+        loop_all_read_a_scale = tkw.filter_nodes(
+            all_read_a_scale, subgraph=pipeline_loop.KERNEL
+        )
+        loop_all_read_b_scale = tkw.filter_nodes(
+            all_read_b_scale, subgraph=pipeline_loop.KERNEL
+        )
+        loop_bitcast_a = tkw.filter_nodes(bitcast_a, subgraph=pipeline_loop.KERNEL)
+        loop_bitcast_a_scale = tkw.filter_nodes(
+            bitcast_a_scale, subgraph=pipeline_loop.KERNEL
+        )
+        loop_bitcast_b = tkw.filter_nodes(bitcast_b, subgraph=pipeline_loop.KERNEL)
+        loop_bitcast_b_scale = tkw.filter_nodes(
+            bitcast_b_scale, subgraph=pipeline_loop.KERNEL
+        )
+        loop_scaled_mma = tkw.filter_nodes(scaled_mma, subgraph=pipeline_loop.KERNEL)
+
+        loop_scaled_mma_0, loop_scaled_mma_1 = tkw.partition_by_dim(
+            loop_scaled_mma, dim=K, num_partitions=2
+        )
+        loop_shared_load_a_0, loop_shared_load_a_1 = tkw.partition_by_dim(
+            loop_shared_load_a, dim=K, num_partitions=2
+        )
+        loop_shared_load_b_0, loop_shared_load_b_1 = tkw.partition_by_dim(
+            loop_shared_load_b, dim=K, num_partitions=2
+        )
+        loop_bitcast_a_0, loop_bitcast_a_1 = tkw.partition_by_dim(
+            loop_bitcast_a, dim=K, num_partitions=2
+        )
+        loop_bitcast_b_0, loop_bitcast_b_1 = tkw.partition_by_dim(
+            loop_bitcast_b, dim=K, num_partitions=2
+        )
+
+        number_outstanding_loads_to_vgpr = len(
+            tkw.filter_nodes(loop_all_read_a_scale, node_type=tkw.Read)
+        ) + len(tkw.filter_nodes(loop_all_read_b_scale, node_type=tkw.Read))
+
+        cluster_0_ops = [
+            tkw.SchedulingBarrier([]),
+            tkw.MemoryCounterWait(load=0),
+            tkw.WorkgroupBarrier(),
+            tkw.WorkgroupBarrier(),
+        ]
+        cluster_0_ops.extend(
+            [
+                loop_global_to_shared,
+                tkw.SchedulingBarrier([]),
+                loop_shared_load_a_0,
+                loop_shared_load_b_0,
+                loop_bitcast_a_0,
+                loop_bitcast_a_scale,
+                loop_bitcast_b_0,
+                loop_bitcast_b_scale,
+                loop_all_read_a_scale,
+                loop_all_read_b_scale,
+                tkw.SchedulingBarrier([]),
+            ]
+        )
+        if use_stagger:
+            cluster_0_ops.extend(
+                [
+                    tkw.WorkgroupBarrier(),
+                    tkw.SchedulingBarrier([]),
+                ]
+            )
+
+        clusters = [
+            tkw.cluster(cluster_0_ops),
+            tkw.cluster(
+                [
+                    tkw.SetWavePrio(1),
+                    loop_scaled_mma_0,
+                    tkw.SetWavePrio(0),
+                    tkw.SchedulingBarrier([]),
+                    tkw.WorkgroupBarrier(),
+                    tkw.SchedulingBarrier([]),
+                ],
+            ),
+            tkw.cluster(
+                [
+                    tkw.SchedulingBarrier([]),
+                    loop_shared_load_a_1,
+                    loop_shared_load_b_1,
+                    loop_bitcast_a_1,
+                    loop_bitcast_b_1,
+                    tkw.SchedulingBarrier([]),
+                    tkw.WorkgroupBarrier(),
+                    tkw.SchedulingBarrier([]),
+                ],
+            ),
+            tkw.cluster(
+                [
+                    tkw.SetWavePrio(1),
+                    loop_scaled_mma_1,
+                    tkw.SetWavePrio(0),
+                    tkw.SchedulingBarrier([]),
+                ],
+            ),
+        ]
+        tkw.insert_before(pipeline_loop.KERNEL, tkw.MemoryCounterWait(load=0))
+        tkw.insert_before(pipeline_loop.KERNEL, tkw.WorkgroupBarrier())
+        tkw.insert_after(pipeline_loop.KERNEL, tkw.SharedMemoryBarrier())
+        tkw.reorder_graph(pipeline_loop.KERNEL, clusters)
+
+        if use_stagger:
+            tkw.stagger(pipeline_loop.KERNEL)
+
+    return mxfp4_dbuf_schedule
+
+
+def get_mxfp4_dbuf_pingpong_schedule_Bshuffled_lds_opt2(
+    use_stagger: bool = True, shape: tuple = None, block: tuple = None
+):
+    """Return a double-buffered MXFP4 schedule for wave_compile().
+    Same as get_mxfp4_dbuf_pingpong_schedule_Bshuffled(), but B data is read
+    from global memory to LDS.
+
+    Args:
+        use_stagger: Enable wave staggering + WorkgroupBarrier in cluster 0.
+            Recommended for 8-wave configs; disable for 4-wave.
+        shape: Tuple of (M, N, K) dimensions. If provided and bigger than
+            (1024, 1024, 1024), an extra WorkgroupBarrier will be added
+            after the first SchedulingBarrier in cluster 0.
+    """
+    K = tkl.sym.K
+
+    @wave_schedule.wave_schedule()
+    def mxfp4_dbuf_schedule():
+        # =====================================================================
+        # Get tagged nodes from the kernel
+        # =====================================================================
+        k_loop = tkw.get_node_by_tag("k_loop")
+
+        # Matrix A data - GatherToLDS (global->shared) + Read (shared load)
+        all_read_a = tkw.get_node_by_tag("read_a")
+        global_to_shared_a = tkw.filter_nodes(all_read_a, node_type=tkw.GatherToLDS)
+        shared_load_a = tkw.filter_nodes(all_read_a, node_type=tkw.Read)
+
+        # Matrix A scale (global -> VGPR reads)
+        all_read_a_scale = tkw.get_node_by_tag("read_a_scale")
+
+        # Matrix B data - GatherToLDS (global->shared) + Read (shared load)
+        all_read_b = tkw.get_node_by_tag("read_b")
+        global_to_shared_b = tkw.filter_nodes(all_read_b, node_type=tkw.GatherToLDS)
+        shared_load_b = tkw.filter_nodes(all_read_b, node_type=tkw.Read)
+
+        # Matrix B scale (global -> VGPR reads)
+        all_read_b_scale = tkw.get_node_by_tag("read_b_scale")
+        read_b_scale = tkw.filter_nodes(all_read_b_scale, node_type=tkw.Read)
+
+        # Bitcast operations (needed alongside compute)
+        bitcast_a = tkw.get_node_by_tag("bitcast_a")
+        bitcast_a_scale = tkw.get_node_by_tag("bitcast_a_scale")
+        bitcast_b = tkw.get_node_by_tag("bitcast_b")
+        bitcast_b_scale = tkw.get_node_by_tag("bitcast_b_scale")
+
+        # Scaled MMA
+        scaled_mma = tkw.get_node_by_tag("scaled_mma")
+
+        # =====================================================================
+        # Create 2-stage pipeline (double buffering)
+        # =====================================================================
+        pipeline_loop = tkw.pipeline(k_loop)
+
+        with pipeline_loop as pl:
+            # Stage 0: Global-to-shared prefetch via GatherToLDS + Global to VGPR prefetch
+            pl.set_stage(
+                [
+                    (
+                        global_to_shared_a,
+                        global_to_shared_b,
+                        all_read_a_scale,
+                        all_read_b_scale,
+                    ),
+                    (),
+                    (),
+                ],
+            )
+            # Stage 1: Shared memory loads + bitcasts + compute
+            pl.set_stage(
+                [
+                    (shared_load_a, shared_load_b),
+                    (bitcast_a, bitcast_a_scale, bitcast_b, bitcast_b_scale),
+                    (scaled_mma,),
+                ],
+            )
+
+        # =====================================================================
+        # KERNEL: Main loop body with custom cluster ordering
+        # =====================================================================
+
+        # Filter nodes for KERNEL stage
+        loop_global_to_shared = tkw.filter_nodes(
+            global_to_shared_a, subgraph=pipeline_loop.KERNEL
+        ) + tkw.filter_nodes(global_to_shared_b, subgraph=pipeline_loop.KERNEL)
+
+        loop_shared_load_a = tkw.filter_nodes(
+            shared_load_a, subgraph=pipeline_loop.KERNEL
+        )
+        loop_shared_load_b = tkw.filter_nodes(
+            shared_load_b, subgraph=pipeline_loop.KERNEL
+        )
+        loop_all_read_a_scale = tkw.filter_nodes(
+            all_read_a_scale, subgraph=pipeline_loop.KERNEL
+        )
+        loop_all_read_b_scale = tkw.filter_nodes(
+            all_read_b_scale, subgraph=pipeline_loop.KERNEL
+        )
+        loop_bitcast_a = tkw.filter_nodes(bitcast_a, subgraph=pipeline_loop.KERNEL)
+        loop_bitcast_a_scale = tkw.filter_nodes(
+            bitcast_a_scale, subgraph=pipeline_loop.KERNEL
+        )
+        loop_bitcast_b = tkw.filter_nodes(bitcast_b, subgraph=pipeline_loop.KERNEL)
+        loop_bitcast_b_scale = tkw.filter_nodes(
+            bitcast_b_scale, subgraph=pipeline_loop.KERNEL
+        )
+        loop_scaled_mma = tkw.filter_nodes(scaled_mma, subgraph=pipeline_loop.KERNEL)
+
+        loop_scaled_mma_0, loop_scaled_mma_1 = tkw.partition_by_dim(
+            loop_scaled_mma, dim=K, num_partitions=2
+        )
+        loop_shared_load_a_0, loop_shared_load_a_1 = tkw.partition_by_dim(
+            loop_shared_load_a, dim=K, num_partitions=2
+        )
+        loop_shared_load_b_0, loop_shared_load_b_1 = tkw.partition_by_dim(
+            loop_shared_load_b, dim=K, num_partitions=2
+        )
+
+        loop_bitcast_a_0, loop_bitcast_a_1 = tkw.partition_by_dim(
+            loop_bitcast_a, dim=K, num_partitions=2
+        )
+
+        loop_bitcast_b_0, loop_bitcast_b_1 = tkw.partition_by_dim(
+            loop_bitcast_b, dim=K, num_partitions=2
+        )
+
+        # Count only actual global->VGPR Read nodes from the scheduled scale groups.
+        loop_a_scale_reads = tkw.filter_nodes(loop_all_read_a_scale, node_type=tkw.Read)
+        loop_b_scale_reads = tkw.filter_nodes(loop_all_read_b_scale, node_type=tkw.Read)
+        number_outstanding_loads_to_vgpr = len(loop_a_scale_reads) + len(
+            loop_b_scale_reads
+        )
+
+        # To get a race-free kernel we must ensure that all global->shared memory
+        # loads issued by cluster 1 (waves 4-7) have landed before cluster 0
+        # (waves 0-3) begins reading from shared memory. This is enforced by a
+        # memory_counter_wait issued before the last phase starts.
+        #
+        # However, not every load issued by cluster 1 is consumed by cluster 0.
+        # Loads whose results are only ever read within cluster 1 itself carry no
+        # inter-cluster dependency, so cluster 0 does not need to wait for them.
+        # We call these "safe" loads. The `safe` value passed to
+        # memory_counter_wait is the count of such loads that may still be
+        # outstanding at the sync point without causing a hazard.
+        #
+        # The safe count is determined per block size by inspecting which
+        # affine-map indices each cluster reads.
+        # TODO: automate this with a compiler pass that derives inter-cluster
+        # dependencies.
+        safe = 0
+        if block is not None and block == (256, 192, 256):
+            safe = 2
+
+        if block is not None and block == (256, 160, 256):
+            safe = 5
+
+        if block is not None and block == (256, 192, 256):
+
+            cluster_0_ops = [
+                tkw.SchedulingBarrier([]),
+                tkw.MemoryCounterWait(load=number_outstanding_loads_to_vgpr),
+                tkw.WorkgroupBarrier(),
+            ]
+            cluster_0_ops.extend(
+                [
+                    loop_global_to_shared,
+                    tkw.SchedulingBarrier([]),
+                    loop_shared_load_a_0,
+                    loop_shared_load_b_0,
+                    loop_bitcast_a_0,
+                    loop_bitcast_a_scale,
+                    loop_bitcast_b_0,
+                    loop_bitcast_b_scale,
+                    tkw.SchedulingBarrier([]),
+                ]
+            )
+            if use_stagger:
+                cluster_0_ops.extend(
+                    [
+                        tkw.WorkgroupBarrier(),
+                        tkw.SchedulingBarrier([]),
+                    ]
+                )
+
+            clusters = [
+                tkw.cluster(cluster_0_ops),
+                tkw.cluster(
+                    [
+                        tkw.SetWavePrio(1),
+                        loop_scaled_mma_0,
+                        tkw.SetWavePrio(0),
+                        tkw.SchedulingBarrier([]),
+                        tkw.WorkgroupBarrier(),
+                        tkw.SchedulingBarrier([]),
+                    ],
+                ),
+                tkw.cluster(
+                    [
+                        tkw.SchedulingBarrier([]),
+                        loop_all_read_a_scale,
+                        loop_all_read_b_scale,
+                        loop_shared_load_a_1,
+                        loop_shared_load_b_1,
+                        loop_bitcast_a_1,
+                        loop_bitcast_b_1,
+                        tkw.SchedulingBarrier([]),
+                        tkw.MemoryCounterWait(
+                            load=(number_outstanding_loads_to_vgpr + safe)
+                        ),
+                        tkw.WorkgroupBarrier(),
+                        tkw.SchedulingBarrier([]),
+                    ],
+                ),
+                tkw.cluster(
+                    [
+                        tkw.SetWavePrio(1),
+                        loop_scaled_mma_1,
+                        tkw.SetWavePrio(0),
+                        tkw.SchedulingBarrier([]),
+                    ],
+                ),
+            ]
+            tkw.insert_before(
+                pipeline_loop.KERNEL,
+                tkw.MemoryCounterWait(load=number_outstanding_loads_to_vgpr),
+            )
+
+        elif block is not None and block == (256, 160, 256):
+            cluster_0_ops = [
+                tkw.SchedulingBarrier([]),
+                tkw.MemoryCounterWait(load=number_outstanding_loads_to_vgpr),
+                tkw.WorkgroupBarrier(),
+            ]
+            cluster_0_ops.extend(
+                [
+                    loop_global_to_shared,
+                    tkw.SchedulingBarrier([]),
+                    loop_shared_load_a_0,
+                    loop_shared_load_b_0,
+                    loop_bitcast_a_0,
+                    loop_bitcast_a_scale,
+                    loop_bitcast_b_0,
+                    loop_bitcast_b_scale,
+                    loop_shared_load_a_1,
+                    loop_shared_load_b_1,
+                    tkw.SchedulingBarrier([]),
+                ]
+            )
+            if use_stagger:
+                cluster_0_ops.extend(
+                    [
+                        tkw.WorkgroupBarrier(),
+                        tkw.SchedulingBarrier([]),
+                    ]
+                )
+
+            clusters = [
+                tkw.cluster(cluster_0_ops),
+                tkw.cluster(
+                    [
+                        tkw.SetWavePrio(1),
+                        loop_scaled_mma_0,
+                        tkw.SetWavePrio(0),
+                        tkw.SchedulingBarrier([]),
+                        tkw.WorkgroupBarrier(),
+                        tkw.SchedulingBarrier([]),
+                    ],
+                ),
+                tkw.cluster(
+                    [
+                        tkw.SchedulingBarrier([]),
+                        loop_bitcast_a_1,
+                        loop_bitcast_b_1,
+                        tkw.SchedulingBarrier([]),
+                        tkw.MemoryCounterWait(
+                            load=(number_outstanding_loads_to_vgpr + safe)
+                        ),
+                        tkw.WorkgroupBarrier(),
+                        tkw.SchedulingBarrier([]),
+                    ],
+                ),
+                tkw.cluster(
+                    [
+                        tkw.SetWavePrio(1),
+                        loop_scaled_mma_1,
+                        tkw.SetWavePrio(0),
+                        tkw.SchedulingBarrier([]),
+                    ],
+                ),
+            ]
+            tkw.insert_before(
+                pipeline_loop.KERNEL,
+                tkw.MemoryCounterWait(load=number_outstanding_loads_to_vgpr),
+            )
+
+        else:
+
+            cluster_0_ops = [
+                tkw.SchedulingBarrier([]),
+                tkw.MemoryCounterWait(load=0),
+                tkw.WorkgroupBarrier(),
+            ]
+            cluster_0_ops.extend(
+                [
+                    loop_global_to_shared,
+                    tkw.SchedulingBarrier([]),
+                    loop_shared_load_a_0,
+                    loop_shared_load_b_0,
+                    loop_bitcast_a_0,
+                    loop_bitcast_a_scale,
+                    loop_bitcast_b_0,
+                    loop_bitcast_b_scale,
+                    loop_all_read_a_scale,
+                    loop_all_read_b_scale,
+                    tkw.SchedulingBarrier([]),
+                ]
+            )
+            if use_stagger:
+                cluster_0_ops.extend(
+                    [
+                        tkw.WorkgroupBarrier(),
+                        tkw.SchedulingBarrier([]),
+                    ]
+                )
+
+            clusters = [
+                tkw.cluster(cluster_0_ops),
+                tkw.cluster(
+                    [
+                        tkw.SetWavePrio(1),
+                        loop_scaled_mma_0,
+                        tkw.SetWavePrio(0),
+                        tkw.SchedulingBarrier([]),
+                        tkw.WorkgroupBarrier(),
+                        tkw.SchedulingBarrier([]),
+                    ],
+                ),
+                tkw.cluster(
+                    [
+                        tkw.SchedulingBarrier([]),
+                        loop_shared_load_a_1,
+                        loop_shared_load_b_1,
+                        loop_bitcast_a_1,
+                        loop_bitcast_b_1,
+                        tkw.SchedulingBarrier([]),
+                        tkw.MemoryCounterWait(load=(number_outstanding_loads_to_vgpr + safe)),
+                        tkw.WorkgroupBarrier(),
+                        tkw.SchedulingBarrier([]),
+                    ],
+                ),
+                tkw.cluster(
+                    [
+                        tkw.SetWavePrio(1),
+                        loop_scaled_mma_1,
+                        tkw.SetWavePrio(0),
+                        tkw.SchedulingBarrier([]),
+                    ],
+                ),
+            ]
+            tkw.insert_before(pipeline_loop.KERNEL, tkw.MemoryCounterWait(load=number_outstanding_loads_to_vgpr))
+
+        # Insert barriers at loop boundaries
+
+        tkw.insert_before(pipeline_loop.KERNEL, tkw.WorkgroupBarrier())
+        tkw.insert_after(pipeline_loop.KERNEL, tkw.SharedMemoryBarrier())
+
+        # Apply the cluster-based reordering
+        tkw.reorder_graph(pipeline_loop.KERNEL, clusters)
+
+        # Apply wave staggering for better overlap
+        if use_stagger:
+            tkw.stagger(pipeline_loop.KERNEL)
+
+    return mxfp4_dbuf_schedule
+
+

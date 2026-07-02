@@ -123,25 +123,57 @@ def _run_mxfp_gemm_preshuffle(
     )
 
 
-def _run_mxfp_gemm_preshuffle_transposed(gemm, shape, output_dtype=torch.float32):
+def _run_mxfp_gemm_preshuffle_ct(gemm, shape, output_dtype=torch.bfloat16):
+    """Run a transposed GEMM kernel that computes C^T = B * A^T (scales-only preshuffle).
+
+    The kernel receives (w, w_scales, x, x_scales) in swapped roles so that it
+    computes C^T of shape (N, M).  B (activation x) is NOT preshuffled — it is
+    read from global memory to LDS in-kernel, just like the base test.
+    The output is compared against torch_out.T.
+    """
+    M_orig, N_orig, K = shape
+    x, w, x_scales, w_scales = generate_gemm_afp4wfp4_inputs(shape)
+    torch_out = torchScaledGemmMXFP4(x, w, x_scales, w_scales)  # (M, N)
+    w_scales_ps = e8m0_shuffle(w_scales)
+    x_scales_ps = e8m0_shuffle(x_scales)
+    w_t = w.T.contiguous()
+    w_t, x_c = w_t.cuda(), x.cuda()
+    w_scales_ps, x_scales_ps = w_scales_ps.cuda(), x_scales_ps.cuda()
+    out = torch.zeros(N_orig, M_orig, dtype=output_dtype).cuda()  # C^T shape
+    gemm(w_t, w_scales_ps, x_c, x_scales_ps, out)
+    torch.testing.assert_close(
+        torch_out.T.contiguous(), out.cpu(), check_dtype=False, check_device=False
+    )
+
+
+def _run_mxfp_gemm_preshuffle_transposed(
+    gemm, shape, output_dtype=torch.float32, b_preshuffled=False
+):
     """Run transposed GEMM that outputs C[M, N] in row-major layout.
     Internally computes C^T = B * A^T, then the permlane_swap epilogue
     writes the result as C[M, N] to global memory.
     Output is allocated as (M, N) and compared directly against the reference.
+
+    b_preshuffled=False (default): B (activation x) is passed as-is; the
+        non-B-shuffled kernel handles the layout via global→LDS internally.
+    b_preshuffled=True: x is preshuffled via b_preshuffle() before launch,
+        for use with get_tagged_mxfp4_gemm_preshuffle_scales_and_B kernels.
     """
     M_orig, N_orig, K = shape
     x, w, x_scales, w_scales = generate_gemm_afp4wfp4_inputs(shape)
     torch_out = torchScaledGemmMXFP4(x, w, x_scales, w_scales)
     w_t = w.T.contiguous()
-    x_ps = b_preshuffle(x)
+    x_b = b_preshuffle(x) if b_preshuffled else x
     w_scales_ps = e8m0_shuffle(w_scales)
     x_scales_ps = e8m0_shuffle(x_scales)
-    w_t, x_ps = w_t.cuda(), x_ps.cuda()
+    w_t, x_b = w_t.cuda(), x_b.cuda()
     w_scales_ps, x_scales_ps = w_scales_ps.cuda(), x_scales_ps.cuda()
 
     out = torch.zeros(M_orig, N_orig, dtype=output_dtype).cuda()
 
-    gemm(w_t, w_scales_ps, x_ps, x_scales_ps, out)
+    
+    for _ in range(100):    
+        gemm(w_t, w_scales_ps, x_b, x_scales_ps, out)
     torch.testing.assert_close(
         torch_out, out.cpu(), check_dtype=False, check_device=False
     )
@@ -290,16 +322,45 @@ def test_dbuf_8wave_pingpong_mxfp_gemm(
     options.enable_swizzle= True
     if os.environ.get("WAVE_VECTORIZED_STORE", "0") not in ("0", "false", "False"):
         _K = shape[2]
-        _mlir_map = {
-            1024: "mxfp4_epilogue_opt_256x256_K1024.mlir",
-            2048: "mxfp4_epilogue_opt_256x256_K2048.mlir",
-            4096: "mxfp4_epilogue_opt_256x256_K4096.mlir",
-            8192: "mxfp4_epilogue_opt_256x256x256.mlir",
-        }
+        _block_m = block[0]
+        if _block_m == 128:
+            _M, _N = shape[0], shape[1]
+            if _M == 8192 and _N == 8192:
+                _mlir_map = {
+                    1024: "mxfp4_epilogue_opt_128x128_8192x8192_K1024.mlir",
+                    2048: "mxfp4_epilogue_opt_128x128_8192x8192_K2048.mlir",
+                    4096: "mxfp4_epilogue_opt_128x128_8192x8192_K4096.mlir",
+                    8192: "mxfp4_epilogue_opt_128x128_8192x8192_K8192.mlir",
+                }
+            else:
+                _mlir_map = {
+                    1024: "mxfp4_epilogue_opt_128x128_K1024.mlir",
+                    8192: "mxfp4_epilogue_opt_128x128_K8192.mlir",
+                }
+        else:
+            _M, _N = shape[0], shape[1]
+            if _M == 16384 and _N == 16384:
+                _mlir_map = {
+                    1024: "mxfp4_epilogue_opt_256x256_16384x16384_K1024.mlir",
+                    8192: "mxfp4_epilogue_opt_256x256_16384x16384_K8192.mlir",
+                }
+            elif _M == 8192 and _N == 8192:
+                _mlir_map = {
+                    1024: "mxfp4_epilogue_opt_256x256_8192x8192_K1024.mlir",
+                    8192: "mxfp4_epilogue_opt_256x256_8192x8192_K8192.mlir",
+                }
+            else:
+                _mlir_map = {
+                    1024: "mxfp4_epilogue_opt_256x256_K1024.mlir",
+                    2048: "mxfp4_epilogue_opt_256x256_K2048.mlir",
+                    4096: "mxfp4_epilogue_opt_256x256_K4096.mlir",
+                    8192: "mxfp4_epilogue_opt_256x256x256.mlir",
+                }
         _mlir_file = _mlir_map.get(_K)
         if _mlir_file is None:
             raise ValueError(
-                f"WAVE_VECTORIZED_STORE: no hand-optimised MLIR for K={_K}. "
+                f"WAVE_VECTORIZED_STORE: no hand-optimised MLIR for K={_K} "
+                f"(block_m={_block_m}). "
                 f"Available K values: {list(_mlir_map.keys())}"
             )
         options.override_mlir = (
@@ -456,7 +517,7 @@ def test_dbuf_8wave_pingpong_mxfp_gemm_Bshuffle_lds(
 
 
 def test_dbuf_8wave_pingpong_mxfp_gemm_Bshuffle_lds_optimized_epilogue(
-    is_debug=False, shape=(2048, 2048, 8192), block=(256, 256, 256), dynamic=False
+    is_debug=False, shape=(1024, 1024, 1920), block=(256, 192, 256), dynamic=False
 ):
     """Double-buffered MXFP4 GEMM, 8 waves, ping-pong with stagger.
     A&B scales are preshuffled and read from global memory directly to VGPRs.
@@ -466,18 +527,23 @@ def test_dbuf_8wave_pingpong_mxfp_gemm_Bshuffle_lds_optimized_epilogue(
     """
 
     # This test is wired for the 256x256x256 tile-specific optimized epilogue.
-    if block != (256, 256, 256):
-        raise ValueError(
-            "optimized_epilogue test currently supports only block=(256, 256, 256)"
-        )
+    # if block != (256, 256, 256):
+    #     raise ValueError(
+    #         "optimized_epilogue test currently supports only block=(256, 256, 256)"
+    #     )
 
     # For quick experiments you can paste an inline override here:
     # xx = """<full IR module>"""
     # options.override_mlir = xx
+    # xx = (
+    #     pathlib.Path(__file__).parent
+    #     / "mlir"
+    #     / "mxfp4_epilogue_opt2_256x256x256_xor_candidate.mlir"
+    # ).read_text()
     xx = (
         pathlib.Path(__file__).parent
         / "mlir"
-        / "mxfp4_epilogue_opt2_256x256x256_xor_candidate.mlir"
+        / "mxfp4_epilogue_opt_256x192x256.mlir"
     ).read_text()
     wave_shape = _get_8wave_shape_from_block(block)
     gemm, options = get_tagged_mxfp4_gemm_preshuffle_scales_and_B(
@@ -574,7 +640,7 @@ def test_dbuf_8wave_pingpong_mxfp_gemm_Bshuffle_lds_transposed(
     )
     options = set_default_run_config(options)
     gemm = wave_compile(options, gemm, schedule)
-    _run_mxfp_gemm_preshuffle_transposed(gemm, shape, output_dtype=torch.bfloat16)
+    _run_mxfp_gemm_preshuffle_transposed(gemm, shape, output_dtype=torch.bfloat16, b_preshuffled=True)
     mode = "dynamic" if dynamic else "static"
     print(
         f"MXFP GEMM transposed (C^T=B*A^T) 8-wave ping pong B->LDS ({mode}) test passed!"
@@ -899,6 +965,471 @@ def test_splitk_preshuffle_scales_gemm_cpp(
 
     _run_mxfp_gemm_preshuffle(gemm, shape, only_scale=True)
     print("Split-K MXFP4 GEMM (preshuffled scales, WaveASM backend) test passed!")
+
+def test_dbuf_8wave_pingpong_mxfp_gemm_ct_naive(
+    is_debug=False,
+    shape=(8192, 8192, 1024),
+    block=(128, 128, 256),
+    dynamic=False,
+):
+    """Double-buffered MXFP4 GEMM computing C^T = B * A^T (256x256, scales-only preshuffle).
+
+    The kernel receives (w, w_scales, x, x_scales) with swapped roles so that
+    it computes C^T of shape (N, M). B (activation x) is NOT preshuffled —
+    it goes global → LDS in-kernel, matching the base test_dbuf_8wave_pingpong_mxfp_gemm.
+    Only scales are preshuffled.
+    """
+    M_orig, N_orig, K = shape
+    shape_t = (N_orig, M_orig, K)
+    block_t = (block[1], block[0], block[2])
+
+    wave_shape = _get_8wave_shape_from_block(block_t)
+    gemm, options = get_tagged_mxfp4_gemm_preshuffle_scales(
+        shape_t,
+        block_t,
+        wave_shape=wave_shape,
+        b_address_space=SHARED_ADDRESS_SPACE,
+        output_dtype=tkl.bf16,
+    )
+    options.specialize = True
+    options.use_buffer_ops = True
+    options.minimize_shared_allocs = True
+    options.linearize_shared_access = True
+    options.wave_runtime = True
+    options.override_mlir = (
+        pathlib.Path(__file__).parent
+        / "mlir"
+        / "mxfp4_transposed_epilogue_opt_128x128_noperm.mlir"
+    ).read_text()
+    if dynamic:
+        options.dynamic_symbols = [tkl.sym.M, tkl.sym.N, tkl.sym.K]
+        for sym in options.dynamic_symbols:
+            del options.subs[sym]
+    schedule = get_mxfp4_dbuf_pingpong_schedule_Bshuffled_lds_opt2(
+        use_stagger=True, shape=shape_t, block=block_t
+    )
+    options = set_default_run_config(options)
+    gemm = wave_compile(options, gemm, schedule)
+    print(gemm.asm)
+    _run_mxfp_gemm_preshuffle_transposed(gemm, shape, output_dtype=torch.bfloat16)
+    mode = "dynamic" if dynamic else "static"
+    print(
+        f"MXFP GEMM C^T=B*A^T optimized epilogue 8-wave ping pong 128x128 ({mode}) test passed!"
+    )
+
+def test_dbuf_8wave_pingpong_mxfp_gemm_ct_naive256(
+    is_debug=False,
+    shape=(1024, 1024, 1024),
+    block=(256, 256, 256),
+    dynamic=False,
+):
+    """Naive (no permlane) 256x256 CT kernel - used for IR generation only."""
+    M_orig, N_orig, K = shape
+    shape_t = (N_orig, M_orig, K)
+    block_t = (block[1], block[0], block[2])
+    wave_shape = _get_8wave_shape_from_block(block_t)
+    gemm, options = get_tagged_mxfp4_gemm_preshuffle_scales(
+        shape_t, block_t, wave_shape=wave_shape,
+        b_address_space=SHARED_ADDRESS_SPACE, output_dtype=tkl.bf16,
+    )
+    options.specialize = True
+    options.use_buffer_ops = True
+    options.minimize_shared_allocs = True
+    options.linearize_shared_access = True
+    options.wave_runtime = True
+    # NO override_mlir – emit naive scalar-store epilogue
+    schedule = get_mxfp4_dbuf_pingpong_schedule_Bshuffled_lds_opt2(
+        use_stagger=True, shape=shape_t, block=block_t
+    )
+    options = set_default_run_config(options)
+    gemm = wave_compile(options, gemm, schedule)
+    print(gemm.asm)
+    _run_mxfp_gemm_preshuffle_transposed(gemm, shape, output_dtype=torch.bfloat16)
+    print("Naive 256x256 CT test passed!")
+
+
+def test_dbuf_8wave_pingpong_mxfp_gemm_ct(
+    is_debug=False,
+    shape=(1024, 1024, 8192),
+    block=(256, 256, 256),
+    dynamic=False,
+):
+    """Double-buffered MXFP4 GEMM computing C^T = B * A^T (256x256, scales-only preshuffle).
+
+    The kernel receives (w, w_scales, x, x_scales) with swapped roles so that
+    it computes C^T of shape (N, M). B (activation x) is NOT preshuffled —
+    it goes global → LDS in-kernel, matching the base test_dbuf_8wave_pingpong_mxfp_gemm.
+    Only scales are preshuffled.
+    """
+    M_orig, N_orig, K = shape
+    shape_t = (N_orig, M_orig, K)
+    block_t = (block[1], block[0], block[2])
+
+    wave_shape = _get_8wave_shape_from_block(block_t)
+    gemm, options = get_tagged_mxfp4_gemm_preshuffle_scales(
+        shape_t,
+        block_t,
+        wave_shape=wave_shape,
+        b_address_space=SHARED_ADDRESS_SPACE,
+        output_dtype=tkl.bf16,
+    )
+    options.specialize = True
+    options.use_buffer_ops = True
+    options.minimize_shared_allocs = True
+    options.linearize_shared_access = True
+    options.wave_runtime = True
+    _mlir_files = {
+        (1024, 1024): "mxfp4_transposed_epilogue_opt_256x256_K8192.mlir",
+        (8192, 8192): "mxfp4_transposed_epilogue_opt_256x256_8192x8192_K8192.mlir",
+        (16384, 16384): "mxfp4_transposed_epilogue_opt_256x256_16384x16384_K8192.mlir",
+    }
+    _mlir_file = _mlir_files.get((M_orig, N_orig))
+    if _mlir_file:
+        options.override_mlir = (
+            pathlib.Path(__file__).parent / "mlir" / _mlir_file
+        ).read_text()
+    if dynamic:
+        options.dynamic_symbols = [tkl.sym.M, tkl.sym.N, tkl.sym.K]
+        for sym in options.dynamic_symbols:
+            del options.subs[sym]
+    schedule = get_mxfp4_dbuf_pingpong_schedule_Bshuffled_lds_opt2(
+        use_stagger=True, shape=shape_t, block=block_t
+    )
+    options = set_default_run_config(options)
+    gemm = wave_compile(options, gemm, schedule)
+    print(gemm.asm)
+    _run_mxfp_gemm_preshuffle_transposed(gemm, shape, output_dtype=torch.bfloat16)
+    mode = "dynamic" if dynamic else "static"
+    print(
+        f"MXFP GEMM C^T=B*A^T optimized epilogue 8-wave ping pong 256x256 ({mode}) test passed!"
+    )
+
+
+def test_dbuf_8wave_pingpong_mxfp_gemm_ct_K1024(
+    is_debug=False,
+    shape=(1024, 1024, 1024),
+    block=(256, 256, 256),
+    dynamic=False,
+):
+    """Same as test_dbuf_8wave_pingpong_mxfp_gemm_ct but with K=1024."""
+    M_orig, N_orig, K = shape
+    shape_t = (N_orig, M_orig, K)
+    block_t = (block[1], block[0], block[2])
+
+    wave_shape = _get_8wave_shape_from_block(block_t)
+    gemm, options = get_tagged_mxfp4_gemm_preshuffle_scales(
+        shape_t,
+        block_t,
+        wave_shape=wave_shape,
+        b_address_space=SHARED_ADDRESS_SPACE,
+        output_dtype=tkl.bf16,
+    )
+    options.specialize = True
+    options.use_buffer_ops = True
+    options.minimize_shared_allocs = True
+    options.linearize_shared_access = True
+    options.wave_runtime = True
+    _mlir_files = {
+        (1024, 1024): "mxfp4_transposed_epilogue_opt_256x256_K1024.mlir",
+        (8192, 8192): "mxfp4_transposed_epilogue_opt_256x256_8192x8192_K1024.mlir",
+        (16384, 16384): "mxfp4_transposed_epilogue_opt_256x256_16384x16384_K1024.mlir",
+    }
+    _mlir_file = _mlir_files.get((M_orig, N_orig))
+    if _mlir_file:
+        options.override_mlir = (
+            pathlib.Path(__file__).parent / "mlir" / _mlir_file
+        ).read_text()
+    if dynamic:
+        options.dynamic_symbols = [tkl.sym.M, tkl.sym.N, tkl.sym.K]
+        for sym in options.dynamic_symbols:
+            del options.subs[sym]
+    schedule = get_mxfp4_dbuf_pingpong_schedule_Bshuffled_lds_opt2(
+        use_stagger=True, shape=shape_t, block=block_t
+    )
+    options = set_default_run_config(options)
+    gemm = wave_compile(options, gemm, schedule)
+    print(gemm.asm)
+    _run_mxfp_gemm_preshuffle_transposed(gemm, shape, output_dtype=torch.bfloat16)
+    mode = "dynamic" if dynamic else "static"
+    print(
+        f"MXFP GEMM C^T=B*A^T optimized epilogue 8-wave ping pong 256x256 K=1024 ({mode}) test passed!"
+    )
+
+
+def test_dbuf_8wave_pingpong_mxfp_gemm_ct_K2048(
+    is_debug=False,
+    shape=(1024, 1024, 2048),
+    block=(256, 256, 256),
+    dynamic=False,
+):
+    """Same as test_dbuf_8wave_pingpong_mxfp_gemm_ct but with K=2048."""
+    M_orig, N_orig, K = shape
+    shape_t = (N_orig, M_orig, K)
+    block_t = (block[1], block[0], block[2])
+
+    wave_shape = _get_8wave_shape_from_block(block_t)
+    gemm, options = get_tagged_mxfp4_gemm_preshuffle_scales(
+        shape_t,
+        block_t,
+        wave_shape=wave_shape,
+        b_address_space=SHARED_ADDRESS_SPACE,
+        output_dtype=tkl.bf16,
+    )
+    options.specialize = True
+    options.use_buffer_ops = True
+    options.minimize_shared_allocs = True
+    options.linearize_shared_access = True
+    options.wave_runtime = True
+    options.override_mlir = (
+        pathlib.Path(__file__).parent
+        / "mlir"
+        / "mxfp4_transposed_epilogue_opt_256x256_K2048.mlir"
+    ).read_text()
+    if dynamic:
+        options.dynamic_symbols = [tkl.sym.M, tkl.sym.N, tkl.sym.K]
+        for sym in options.dynamic_symbols:
+            del options.subs[sym]
+    schedule = get_mxfp4_dbuf_pingpong_schedule_Bshuffled_lds_opt2(
+        use_stagger=True, shape=shape_t, block=block_t
+    )
+    options = set_default_run_config(options)
+    gemm = wave_compile(options, gemm, schedule)
+    print(gemm.asm)
+    _run_mxfp_gemm_preshuffle_transposed(gemm, shape, output_dtype=torch.bfloat16)
+    mode = "dynamic" if dynamic else "static"
+    print(
+        f"MXFP GEMM C^T=B*A^T optimized epilogue 8-wave ping pong 256x256 K=2048 ({mode}) test passed!"
+    )
+
+
+def test_dbuf_8wave_pingpong_mxfp_gemm_ct_K4096(
+    is_debug=False,
+    shape=(1024, 1024, 4096),
+    block=(256, 256, 256),
+    dynamic=False,
+):
+    """Same as test_dbuf_8wave_pingpong_mxfp_gemm_ct but with K=4096."""
+    M_orig, N_orig, K = shape
+    shape_t = (N_orig, M_orig, K)
+    block_t = (block[1], block[0], block[2])
+
+    wave_shape = _get_8wave_shape_from_block(block_t)
+    gemm, options = get_tagged_mxfp4_gemm_preshuffle_scales(
+        shape_t,
+        block_t,
+        wave_shape=wave_shape,
+        b_address_space=SHARED_ADDRESS_SPACE,
+        output_dtype=tkl.bf16,
+    )
+    options.specialize = True
+    options.use_buffer_ops = True
+    options.minimize_shared_allocs = True
+    options.linearize_shared_access = True
+    options.wave_runtime = True
+    options.override_mlir = (
+        pathlib.Path(__file__).parent
+        / "mlir"
+        / "mxfp4_transposed_epilogue_opt_256x256_K4096.mlir"
+    ).read_text()
+    if dynamic:
+        options.dynamic_symbols = [tkl.sym.M, tkl.sym.N, tkl.sym.K]
+        for sym in options.dynamic_symbols:
+            del options.subs[sym]
+    schedule = get_mxfp4_dbuf_pingpong_schedule_Bshuffled_lds_opt2(
+        use_stagger=True, shape=shape_t, block=block_t
+    )
+    options = set_default_run_config(options)
+    gemm = wave_compile(options, gemm, schedule)
+    print(gemm.asm)
+    _run_mxfp_gemm_preshuffle_transposed(gemm, shape, output_dtype=torch.bfloat16)
+    mode = "dynamic" if dynamic else "static"
+    print(
+        f"MXFP GEMM C^T=B*A^T optimized epilogue 8-wave ping pong 256x256 K=4096 ({mode}) test passed!"
+    )
+
+
+def test_dbuf_8wave_pingpong_mxfp_gemm_128x128(
+    is_debug=False,
+    shape=(2048, 2048, 1024),
+    block=(128, 128, 256),
+    dynamic=False,
+):
+    """Double-buffered MXFP4 GEMM with 128×128 tile block (8 waves, ping-pong).
+
+    Uses the XOR-vectorized optimized epilogue from a hand-written MLIR override.
+    Set WAVE_VECTORIZED_STORE=1 to activate the MLIR override; without it the
+    kernel falls back to the naive scalar-store epilogue.
+
+    Supported shapes (set via --shape M,N,K):
+      2048,2048,1024  (default)
+      2048,2048,8192
+
+    Example:
+        WAVE_MXFP4_VARIANT=opt2 WAVE_VECTORIZED_STORE=1 \\
+            python 7.1_schedule.py --test test_dbuf_8wave_pingpong_mxfp_gemm_128x128 \\
+            --shape 2048,2048,1024 --block 128,128,256
+    """
+    wave_shape = _get_8wave_shape_from_block(block)
+    gemm, options = get_tagged_mxfp4_gemm_preshuffle_scales(
+        shape,
+        block,
+        wave_shape=wave_shape,
+        b_address_space=SHARED_ADDRESS_SPACE,
+        output_dtype=tkl.bf16,
+    )
+    options.specialize = True
+    options.use_buffer_ops = True
+    options.minimize_shared_allocs = True
+    options.linearize_shared_access = True
+    options.wave_runtime = True
+    options.enable_swizzle = True
+
+    if os.environ.get("WAVE_VECTORIZED_STORE", "0") not in ("0", "false", "False"):
+        _K = shape[2]
+        _mlir_map = {
+            1024: "mxfp4_epilogue_opt_128x128_K1024.mlir",
+            8192: "mxfp4_epilogue_opt_128x128_K8192.mlir",
+        }
+        _mlir_file = _mlir_map.get(_K)
+        if _mlir_file is None:
+            raise ValueError(
+                f"WAVE_VECTORIZED_STORE: no hand-optimised 128x128 MLIR for K={_K}. "
+                f"Available K values: {list(_mlir_map.keys())}"
+            )
+        options.override_mlir = (
+            pathlib.Path(__file__).parent / "mlir" / _mlir_file
+        ).read_text()
+
+    variant = os.environ.get("WAVE_MXFP4_VARIANT", "opt2")
+    if variant == "opt0":
+        schedule = get_mxfp4_dbuf_pingpong_schedule_Bshuffled_lds_opt0(
+            use_stagger=False, shape=shape, block=block
+        )
+    elif variant == "opt1":
+        schedule = get_mxfp4_dbuf_pingpong_schedule_Bshuffled_lds_opt1(
+            use_stagger=True, shape=shape, block=block
+        )
+    elif variant == "opt2":
+        schedule = get_mxfp4_dbuf_pingpong_schedule_Bshuffled_lds_opt2(
+            use_stagger=True, shape=shape, block=block
+        )
+    else:
+        schedule = get_mxfp4_dbuf_pingpong_schedule_Bshuffled_lds_opt_opt00(
+            use_stagger=False, shape=shape, block=block
+        )
+
+    enable_unroll = os.environ.get("WAVE_ENABLE_UNROLL", "1") not in (
+        "0",
+        "false",
+        "False",
+    )
+    if enable_unroll:
+        options.postprocess = """
+        module attributes {transform.with_named_sequence} {
+            transform.named_sequence @__transform_main(%arg0: !transform.any_op {transform.readonly}) {
+                %0 = transform.structured.match ops{["scf.for"]} in %arg0 : (!transform.any_op) -> !transform.any_op
+                transform.loop.unroll %0 { factor = 2 } : !transform.any_op
+                transform.yield
+            }
+        }
+        """
+
+    options.print_ir_after = "all" if is_debug else []
+    options = set_default_run_config(options)
+    gemm = wave_compile(options, gemm, schedule)
+    print(gemm.asm)
+
+    _run_mxfp_gemm_preshuffle(
+        gemm, shape, only_scale=True, output_dtype=torch.bfloat16
+    )
+    mode = "dynamic" if dynamic else "static"
+    print(
+        f"MXFP GEMM 128x128 XOR-epilogue 8-wave ping-pong ({mode}) test passed!"
+    )
+
+
+def test_dbuf_8wave_pingpong_mxfp_gemm_ct_128x128(
+    is_debug=False,
+    shape=(2048, 2048, 1024),
+    block=(128, 128, 256),
+    dynamic=False,
+):
+    """Transposed MXFP4 GEMM (C^T = B·A^T) with 128×128 tile, permlane + bf16-shuffle epilogue.
+
+    Uses the hand-optimized transposed epilogue with bf16-shuffle optimization:
+    accumulators are truncated f32→bf16, packed into i32, then 2×i32 permlane_swaps
+    are performed (halving shuffle count vs. naive 4×f32 permlane approach).
+
+    Block coordinates are swapped so the kernel computes (N_orig × M_orig) which
+    is the transposed output. The test validates the result against a reference
+    computed from the non-transposed path.
+
+    Supported shapes (set via --shape M,N,K):
+      2048,2048,1024  (default)
+      2048,2048,8192
+
+    Example:
+        WAVE_MXFP4_VARIANT=opt2 \\
+            python 7.1_schedule.py --test test_dbuf_8wave_pingpong_mxfp_gemm_ct_128x128 \\
+            --shape 2048,2048,1024 --block 128,128,256
+    """
+    M_orig, N_orig, K = shape
+    shape_t = (N_orig, M_orig, K)
+    block_t = (block[1], block[0], block[2])
+
+    wave_shape = _get_8wave_shape_from_block(block_t)
+    gemm, options = get_tagged_mxfp4_gemm_preshuffle_scales(
+        shape_t,
+        block_t,
+        wave_shape=wave_shape,
+        b_address_space=SHARED_ADDRESS_SPACE,
+        output_dtype=tkl.bf16,
+    )
+    options.specialize = True
+    options.use_buffer_ops = True
+    options.minimize_shared_allocs = True
+    options.linearize_shared_access = True
+    options.wave_runtime = True
+    options.enable_swizzle = True
+
+    _K = shape[2]
+    _M, _N = shape[0], shape[1]
+    _mlir_map_small = {
+        1024: "mxfp4_transposed_epilogue_opt_128x128_K1024.mlir",
+        8192: "mxfp4_transposed_epilogue_opt_128x128_K8192.mlir",
+    }
+    _mlir_map_8192 = {
+        1024: "mxfp4_transposed_epilogue_opt_128x128_8192x8192_K1024.mlir",
+        8192: "mxfp4_transposed_epilogue_opt_128x128_8192x8192_K8192.mlir",
+    }
+    _mlir_map = _mlir_map_8192 if (_M == 8192 and _N == 8192) else _mlir_map_small
+    _mlir_file = _mlir_map.get(_K)
+    if _mlir_file is None:
+        raise ValueError(
+            f"No hand-optimised transposed 128x128 MLIR for K={_K}. "
+            f"Available K values: {list(_mlir_map.keys())}"
+        )
+    options.override_mlir = (
+        pathlib.Path(__file__).parent / "mlir" / _mlir_file
+    ).read_text()
+
+    if dynamic:
+        options.dynamic_symbols = [tkl.sym.M, tkl.sym.N, tkl.sym.K]
+        for sym in options.dynamic_symbols:
+            del options.subs[sym]
+
+    schedule = get_mxfp4_dbuf_pingpong_schedule_Bshuffled_lds_opt2(
+        use_stagger=True, shape=shape_t, block=block_t
+    )
+    options = set_default_run_config(options)
+    gemm = wave_compile(options, gemm, schedule)
+    print(gemm.asm)
+
+    _run_mxfp_gemm_preshuffle_transposed(gemm, shape, output_dtype=torch.bfloat16)
+    mode = "dynamic" if dynamic else "static"
+    print(
+        f"MXFP GEMM 128x128 transposed permlane+bf16-shuffle epilogue 8-wave ping-pong ({mode}) test passed!"
+    )
 
 
 if __name__ == "__main__":
