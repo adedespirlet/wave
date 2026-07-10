@@ -1,5 +1,6 @@
 import ctypes
 import glob
+import os
 from ctypes import py_object
 from itertools import chain
 from typing import Any, Callable, Optional, Sequence
@@ -534,6 +535,18 @@ def build_graph_passes(
 
     graph_passes.append(partial(coalesce_wide_stores, trace))
 
+    if options.coalesce_epilogue_stores:
+        from .coalesce_epilogue_stores import coalesce_epilogue_stores
+
+        graph_passes.append(
+            partial(
+                coalesce_epilogue_stores,
+                trace,
+                launchable.constraints,
+                options.epilogue_lds_budget,
+            )
+        )
+
     graph_passes += [
         partial(simplify_indices, trace, launchable.constraints),
         partial(
@@ -1035,7 +1048,7 @@ def wave_compile(
     binary_path = None
 
     def get_binary_path():
-        if is_cache_enabled() and cache_manager is not None:
+        if is_cache_enabled() and cache_manager is not None and options.kernel_hash is not None:
             # For cached kernels, return the cache path directly
             # Use cache_manager.base_dir instead of get_cache_base_dir() because:
             # - get_cache_base_dir() always returns the default cache directory (~/.wave)
@@ -1107,6 +1120,10 @@ def wave_compile(
             debug_handlers,
             device_layout,
         ) = _trace_launchable_and_get_kernel_signature(kernel, options, schedule)
+
+        if dump_path := os.environ.get("WAVE_DUMP_PRE_OPT_MLIR"):
+            with open(dump_path, "w") as f:
+                f.write(mb.module_op.get_asm())
 
         ireefy_overriding_module = False
         if options.override_mlir:

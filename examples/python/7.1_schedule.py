@@ -16,6 +16,7 @@ Usage:
 """
 
 import os
+import sys
 import torch
 from utils import list_tests, parse_args, run_test
 import pathlib
@@ -110,7 +111,7 @@ def _run_mxfp_gemm_preshuffle(
     x_scales_ps, w_scales_ps = x_scales_ps.cuda(), w_scales_ps.cuda()
     out = torch.zeros(x.shape[0], w_t_ps.shape[0], dtype=output_dtype).cuda()
 
-    for _ in range(100):
+    for _ in range(200):
         gemm(x, x_scales_ps, w_t_ps, w_scales_ps, out)
 
     tol_kwargs = {}
@@ -172,7 +173,7 @@ def _run_mxfp_gemm_preshuffle_transposed(
     out = torch.zeros(M_orig, N_orig, dtype=output_dtype).cuda()
 
     
-    for _ in range(100):    
+    for _ in range(200):    
         gemm(w_t, w_scales_ps, x_b, x_scales_ps, out)
     torch.testing.assert_close(
         torch_out, out.cpu(), check_dtype=False, check_device=False
@@ -260,7 +261,7 @@ def test_baseline_8wave_pingpong_mxfp_gemm(
     options.minimize_shared_allocs = True
     options.linearize_shared_access = True
     options.wave_runtime = True
-    options.enable_swizzle = True
+    options.enable_swizzle = os.environ.get("WAVE_ENABLE_SWIZZLE", "1") not in ("0", "false", "False")
 
     schedule = get_mxfp4_dbuf_pingpong_schedule_Bshuffled_lds_opt_opt00(
         use_stagger=False, shape=shape, block=block
@@ -319,13 +320,18 @@ def test_dbuf_8wave_pingpong_mxfp_gemm(
     options.minimize_shared_allocs = True
     options.linearize_shared_access = True
     options.wave_runtime = True
-    options.enable_swizzle= True
+    options.enable_swizzle = os.environ.get("WAVE_ENABLE_SWIZZLE", "1") not in ("0", "false", "False")
     if os.environ.get("WAVE_VECTORIZED_STORE", "0") not in ("0", "false", "False"):
         _K = shape[2]
         _block_m = block[0]
         if _block_m == 128:
             _M, _N = shape[0], shape[1]
-            if _M == 8192 and _N == 8192:
+            if _M == 16384 and _N == 16384:
+                _mlir_map = {
+                    1024: "mxfp4_epilogue_opt_128x128_16384x16384_K1024.mlir",
+                    8192: "mxfp4_epilogue_opt_128x128_16384x16384_K8192.mlir",
+                }
+            elif _M == 8192 and _N == 8192:
                 _mlir_map = {
                     1024: "mxfp4_epilogue_opt_128x128_8192x8192_K1024.mlir",
                     2048: "mxfp4_epilogue_opt_128x128_8192x8192_K2048.mlir",
@@ -339,7 +345,29 @@ def test_dbuf_8wave_pingpong_mxfp_gemm(
                 }
         else:
             _M, _N = shape[0], shape[1]
-            if _M == 16384 and _N == 16384:
+            _epilogue = os.environ.get("WAVE_EPILOGUE_VARIANT", "vecxor")
+            if _epilogue == "dpp":
+                if _M == 16384 and _N == 16384:
+                    _mlir_map = {
+                        1024: "mxfp4_epilogue_opt_dpp_256x256_16384x16384_K1024.mlir",
+                        8192: "mxfp4_epilogue_opt_dpp_256x256_16384x16384_K8192.mlir",
+                    }
+                elif _M == 8192 and _N == 8192:
+                    _mlir_map = {
+                        1024: "mxfp4_epilogue_opt_dpp_256x256_8192x8192_K1024.mlir",
+                        8192: "mxfp4_epilogue_opt_dpp_256x256_8192x8192_K8192.mlir",
+                    }
+                elif _M == 2048 and _N == 2048:
+                    _mlir_map = {
+                        1024: "mxfp4_epilogue_opt_dpp_256x256_2048x2048_K1024.mlir",
+                        8192: "mxfp4_epilogue_opt_dpp_256x256_2048x2048_K8192.mlir",
+                    }
+                else:
+                    raise ValueError(
+                        f"WAVE_EPILOGUE_VARIANT=dpp: no DPP MLIR for 256x256 shape ({_M}×{_N}). "
+                        f"Supported: 2048×2048, 8192×8192, 16384×16384."
+                    )
+            elif _M == 16384 and _N == 16384:
                 _mlir_map = {
                     1024: "mxfp4_epilogue_opt_256x256_16384x16384_K1024.mlir",
                     8192: "mxfp4_epilogue_opt_256x256_16384x16384_K8192.mlir",
@@ -348,6 +376,11 @@ def test_dbuf_8wave_pingpong_mxfp_gemm(
                 _mlir_map = {
                     1024: "mxfp4_epilogue_opt_256x256_8192x8192_K1024.mlir",
                     8192: "mxfp4_epilogue_opt_256x256_8192x8192_K8192.mlir",
+                }
+            elif _M == 2048 and _N == 2048:
+                _mlir_map = {
+                    1024: "mxfp4_epilogue_opt_256x256_2048x2048_K1024.mlir",
+                    8192: "mxfp4_epilogue_opt_256x256_2048x2048_K8192.mlir",
                 }
             else:
                 _mlir_map = {
@@ -366,6 +399,12 @@ def test_dbuf_8wave_pingpong_mxfp_gemm(
         options.override_mlir = (
             pathlib.Path(__file__).parent / "mlir" / _mlir_file
         ).read_text()
+        print(
+            f"[WAVE] MLIR override loaded: {_mlir_file}"
+            f"  epilogue={os.environ.get('WAVE_EPILOGUE_VARIANT', 'vecxor')}"
+            f"  block_m={_block_m}",
+            file=sys.stderr,
+        )
     if dynamic:
         options.dynamic_symbols = [tkl.sym.M, tkl.sym.N, tkl.sym.K]
         for sym in options.dynamic_symbols:
@@ -397,6 +436,14 @@ def test_dbuf_8wave_pingpong_mxfp_gemm(
         "0",
         "false",
         "False",
+    )
+    print(
+        f"[WAVE] kernel config:"
+        f"  WAVE_MXFP4_VARIANT={os.environ.get('WAVE_MXFP4_VARIANT', 'opt00')}"
+        f"  WAVE_VECTORIZED_STORE={os.environ.get('WAVE_VECTORIZED_STORE', '0')}"
+        f"  WAVE_ENABLE_UNROLL={enable_unroll}"
+        f"  WAVE_EPILOGUE_VARIANT={os.environ.get('WAVE_EPILOGUE_VARIANT', 'vecxor')}",
+        file=sys.stderr,
     )
     if enable_unroll:
         options.postprocess = """
@@ -1080,6 +1127,7 @@ def test_dbuf_8wave_pingpong_mxfp_gemm_ct(
     options.wave_runtime = True
     _mlir_files = {
         (1024, 1024): "mxfp4_transposed_epilogue_opt_256x256_K8192.mlir",
+        (2048, 2048): "mxfp4_transposed_epilogue_opt_256x256_2048x2048_K8192.mlir",
         (8192, 8192): "mxfp4_transposed_epilogue_opt_256x256_8192x8192_K8192.mlir",
         (16384, 16384): "mxfp4_transposed_epilogue_opt_256x256_16384x16384_K8192.mlir",
     }
@@ -1131,6 +1179,7 @@ def test_dbuf_8wave_pingpong_mxfp_gemm_ct_K1024(
     options.wave_runtime = True
     _mlir_files = {
         (1024, 1024): "mxfp4_transposed_epilogue_opt_256x256_K1024.mlir",
+        (2048, 2048): "mxfp4_transposed_epilogue_opt_256x256_2048x2048_K1024.mlir",
         (8192, 8192): "mxfp4_transposed_epilogue_opt_256x256_8192x8192_K1024.mlir",
         (16384, 16384): "mxfp4_transposed_epilogue_opt_256x256_16384x16384_K1024.mlir",
     }
@@ -1286,14 +1335,29 @@ def test_dbuf_8wave_pingpong_mxfp_gemm_128x128(
 
     if os.environ.get("WAVE_VECTORIZED_STORE", "0") not in ("0", "false", "False"):
         _K = shape[2]
-        _mlir_map = {
-            1024: "mxfp4_epilogue_opt_128x128_K1024.mlir",
-            8192: "mxfp4_epilogue_opt_128x128_K8192.mlir",
-        }
+        _M, _N = shape[0], shape[1]
+        _epilogue = os.environ.get("WAVE_EPILOGUE_VARIANT", "vecxor")
+        if _epilogue == "dpp":
+            if _M == 16384 and _N == 16384:
+                _mlir_map = {
+                    1024: "mxfp4_epilogue_opt_dpp_128x128_16384x16384_K1024.mlir",
+                    8192: "mxfp4_epilogue_opt_dpp_128x128_16384x16384_K8192.mlir",
+                }
+            else:
+                _mlir_map = {
+                    1024: "mxfp4_epilogue_opt_dpp_128x128_K1024.mlir",
+                    8192: "mxfp4_epilogue_opt_dpp_128x128_K8192.mlir",
+                }
+        else:
+            _mlir_map = {
+                1024: "mxfp4_epilogue_opt_128x128_K1024.mlir",
+                8192: "mxfp4_epilogue_opt_128x128_K8192.mlir",
+            }
         _mlir_file = _mlir_map.get(_K)
         if _mlir_file is None:
             raise ValueError(
-                f"WAVE_VECTORIZED_STORE: no hand-optimised 128x128 MLIR for K={_K}. "
+                f"WAVE_VECTORIZED_STORE: no hand-optimised 128x128 MLIR for K={_K} "
+                f"(epilogue={_epilogue}). "
                 f"Available K values: {list(_mlir_map.keys())}"
             )
         options.override_mlir = (
@@ -1402,7 +1466,16 @@ def test_dbuf_8wave_pingpong_mxfp_gemm_ct_128x128(
         1024: "mxfp4_transposed_epilogue_opt_128x128_8192x8192_K1024.mlir",
         8192: "mxfp4_transposed_epilogue_opt_128x128_8192x8192_K8192.mlir",
     }
-    _mlir_map = _mlir_map_8192 if (_M == 8192 and _N == 8192) else _mlir_map_small
+    _mlir_map_16384 = {
+        1024: "mxfp4_transposed_epilogue_opt_128x128_16384x16384_K1024.mlir",
+        8192: "mxfp4_transposed_epilogue_opt_128x128_16384x16384_K8192.mlir",
+    }
+    if _M == 16384 and _N == 16384:
+        _mlir_map = _mlir_map_16384
+    elif _M == 8192 and _N == 8192:
+        _mlir_map = _mlir_map_8192
+    else:
+        _mlir_map = _mlir_map_small
     _mlir_file = _mlir_map.get(_K)
     if _mlir_file is None:
         raise ValueError(
@@ -1429,6 +1502,84 @@ def test_dbuf_8wave_pingpong_mxfp_gemm_ct_128x128(
     mode = "dynamic" if dynamic else "static"
     print(
         f"MXFP GEMM 128x128 transposed permlane+bf16-shuffle epilogue 8-wave ping-pong ({mode}) test passed!"
+    )
+
+
+def test_dbuf_8wave_pingpong_mxfp_gemm_ct_128x128_v2(
+    is_debug=False,
+    shape=(2048, 2048, 1024),
+    block=(128, 128, 256),
+    dynamic=False,
+):
+    """Like test_dbuf_8wave_pingpong_mxfp_gemm_ct_128x128 but uses v2 MLIR files
+    that call amdgpu.permlane_swap directly on vector<4xbf16> instead of the
+    scalar i32 bitcast approach.
+    """
+    M_orig, N_orig, K = shape
+    shape_t = (N_orig, M_orig, K)
+    block_t = (block[1], block[0], block[2])
+
+    wave_shape = _get_8wave_shape_from_block(block_t)
+    gemm, options = get_tagged_mxfp4_gemm_preshuffle_scales(
+        shape_t,
+        block_t,
+        wave_shape=wave_shape,
+        b_address_space=SHARED_ADDRESS_SPACE,
+        output_dtype=tkl.bf16,
+    )
+    options.specialize = True
+    options.use_buffer_ops = True
+    options.minimize_shared_allocs = True
+    options.linearize_shared_access = True
+    options.wave_runtime = True
+    options.enable_swizzle = True
+
+    _K = shape[2]
+    _M, _N = shape[0], shape[1]
+    _mlir_map_small = {
+        1024: "mxfp4_transposed_epilogue_opt_128x128_K1024_v2.mlir",
+        8192: "mxfp4_transposed_epilogue_opt_128x128_K8192_v2.mlir",
+    }
+    _mlir_map_8192 = {
+        1024: "mxfp4_transposed_epilogue_opt_128x128_8192x8192_K1024.mlir",
+        8192: "mxfp4_transposed_epilogue_opt_128x128_8192x8192_K8192.mlir",
+    }
+    _mlir_map_16384 = {
+        1024: "mxfp4_transposed_epilogue_opt_128x128_16384x16384_K1024_v2.mlir",
+        8192: "mxfp4_transposed_epilogue_opt_128x128_16384x16384_K8192_v2.mlir",
+    }
+    if _M == 16384 and _N == 16384:
+        _mlir_map = _mlir_map_16384
+    elif _M == 8192 and _N == 8192:
+        _mlir_map = _mlir_map_8192
+    else:
+        _mlir_map = _mlir_map_small
+    _mlir_file = _mlir_map.get(_K)
+    if _mlir_file is None:
+        raise ValueError(
+            f"No v2 transposed 128x128 MLIR for K={_K}. "
+            f"Available K values: {list(_mlir_map.keys())}"
+        )
+    options.override_mlir = (
+        pathlib.Path(__file__).parent / "mlir" / _mlir_file
+    ).read_text()
+
+    if dynamic:
+        options.dynamic_symbols = [tkl.sym.M, tkl.sym.N, tkl.sym.K]
+        for sym in options.dynamic_symbols:
+            del options.subs[sym]
+
+    schedule = get_mxfp4_dbuf_pingpong_schedule_Bshuffled_lds_opt2(
+        use_stagger=True, shape=shape_t, block=block_t
+    )
+    options = set_default_run_config(options)
+    gemm = wave_compile(options, gemm, schedule)
+    print(gemm.asm)
+
+    _run_mxfp_gemm_preshuffle_transposed(gemm, shape, output_dtype=torch.bfloat16)
+    mode = "dynamic" if dynamic else "static"
+    print(
+        f"MXFP GEMM 128x128 transposed permlane_vec v2 epilogue 8-wave ping-pong ({mode}) test passed!"
     )
 
 
