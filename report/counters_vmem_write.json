@@ -1,0 +1,9 @@
+{
+    "jobs": [
+        {
+            "pmc": ["SQ_INSTS_VMEM_WR", "TCC_WRITE_SECTORS", "SQ_VMEM_TA_CMD_FIFO_FULL", "TCP_TCP_TA_ADDR_STALL_CYCLES", "TCP_TCP_TA_DATA_STALL_CYCLES"],
+            "kernel_include_regex": "gemm",
+            "kernel_exclude_regex": ""
+        }
+    ]
+}
